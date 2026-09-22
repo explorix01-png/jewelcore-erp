@@ -1,0 +1,58 @@
+{
+  "name": "ExchangeTransaction",
+  "type": "object",
+  "properties": {
+    "exchange_number": {
+      "type": "string"
+    },
+    "original_bill_id": {
+      "type": "string"
+    },
+    "original_bill_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "old_item_details": {
+      "type": "string"
+    },
+    "new_item_details": {
+      "type": "string"
+    },
+    "exchange_value": {
+      "type": "number"
+    },
+    "difference_amount": {
+      "type": "number"
+    },
+    "new_bill_id": {
+      "type": "string"
+    },
+    "exchange_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "user_name": {
+      "type": "string"
+    },
+    "operation_id": {
+      "type": "string",
+      "description": "Idempotency key to prevent duplicate exchange submissions"
+    }
+  },
+  "required": [
+    "original_bill_id",
+    "customer_id",
+    "exchange_date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

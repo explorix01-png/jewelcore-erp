@@ -1,0 +1,61 @@
+{
+  "name": "Notification",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Recipient user id (empty = all users)"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "customer_due",
+        "customer_order",
+        "karagir_order",
+        "low_stock",
+        "rate_update",
+        "payment",
+        "system"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "reference_type": {
+      "type": "string"
+    },
+    "reference_id": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "is_read": {
+      "type": "boolean",
+      "default": false
+    },
+    "read_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "created_date": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "type",
+    "title",
+    "message",
+    "created_date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": true,
+    "delete": false
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "name": "ShopSettings",
+  "type": "object",
+  "properties": {
+    "shop_name": {
+      "type": "string"
+    },
+    "logo_url": {
+      "type": "string"
+    },
+    "owner_name": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "pincode": {
+      "type": "string"
+    },
+    "mobile": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "gst_number": {
+      "type": "string"
+    },
+    "business_type": {
+      "type": "string",
+      "enum": [
+        "retail",
+        "wholesale",
+        "manufacturing",
+        "mixed"
+      ],
+      "default": "retail"
+    },
+    "invoice_prefix": {
+      "type": "string",
+      "default": "INV"
+    },
+    "invoice_sequence": {
+      "type": "number",
+      "default": 1
+    },
+    "currency": {
+      "type": "string",
+      "default": "\u20b9"
+    },
+    "default_language": {
+      "type": "string",
+      "enum": [
+        "English",
+        "Hindi",
+        "Marathi"
+      ],
+      "default": "English"
+    },
+    "making_charge_default": {
+      "type": "number",
+      "default": 0
+    },
+    "making_charge_type_default": {
+      "type": "string",
+      "enum": [
+        "percentage",
+        "fixed"
+      ],
+      "default": "percentage"
+    },
+    "gst_enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "gst_threshold_grams": {
+      "type": "number",
+      "default": 0
+    },
+    "low_stock_threshold": {
+      "type": "number",
+      "default": 2
+    },
+    "onboarding_completed": {
+      "type": "boolean",
+      "default": false
+    },
+    "gold_24k_rate": {
+      "type": "number",
+      "default": 0,
+      "description": "Current 24K gold rate per gram \u2014 the only manually entered gold rate"
+    },
+    "silver_rate": {
+      "type": "number",
+      "default": 0,
+      "description": "Current silver rate per gram"
+    },
+    "rate_updated_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "invoice_paper_size": {
+      "type": "string",
+      "enum": [
+        "A4",
+        "A5"
+      ],
+      "default": "A4",
+      "description": "Preferred invoice paper size \u2014 controls print/PDF page dimensions"
+    },
+    "barcode_preset": {
+      "type": "string",
+      "enum": [
+        "small",
+        "medium",
+        "custom"
+      ],
+      "default": "medium",
+      "description": "Barcode label size preset for fold-over jewellery tags"
+    },
+    "barcode_type": {
+      "type": "string",
+      "enum": [
+        "code128",
+        "qr"
+      ],
+      "default": "code128",
+      "description": "Barcode symbology for jewellery tags. code128 = linear barcode (default), qr = QR code"
+    },
+    "barcode_width": {
+      "type": "number",
+      "default": 2,
+      "description": "Barcode module width (px) \u2014 controls bar thickness"
+    },
+    "barcode_height": {
+      "type": "number",
+      "default": 60,
+      "description": "Barcode height (px)"
+    },
+    "barcode_font_size": {
+      "type": "number",
+      "default": 14,
+      "description": "Barcode text font size (px)"
+    },
+    "barcode_label_width": {
+      "type": "number",
+      "default": 20,
+      "description": "Fold-over tag width in millimeters \u2014 controls the physical print page width"
+    },
+    "barcode_label_height": {
+      "type": "number",
+      "default": 40,
+      "description": "Fold-over tag total unfolded height in millimeters (front + back). Fold position = height / 2."
+    },
+    "huid_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "When ON, HUID field is available on item forms and must be unique. When OFF, HUID is not required."
+    }
+  },
+  "required": [
+    "shop_name"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

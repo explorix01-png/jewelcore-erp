@@ -1,0 +1,67 @@
+{
+  "name": "ReturnTransaction",
+  "type": "object",
+  "properties": {
+    "return_number": {
+      "type": "string"
+    },
+    "original_bill_id": {
+      "type": "string"
+    },
+    "original_bill_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "bill_item_id": {
+      "type": "string"
+    },
+    "item_id": {
+      "type": "string"
+    },
+    "item_name": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "net_weight": {
+      "type": "number"
+    },
+    "value": {
+      "type": "number"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "return_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "user_name": {
+      "type": "string"
+    },
+    "operation_id": {
+      "type": "string",
+      "description": "Idempotency key to prevent duplicate return submissions"
+    }
+  },
+  "required": [
+    "original_bill_id",
+    "customer_id",
+    "item_name",
+    "quantity",
+    "value",
+    "return_date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

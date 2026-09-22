@@ -1,0 +1,97 @@
+{
+  "name": "KaragirOrder",
+  "type": "object",
+  "properties": {
+    "order_number": {
+      "type": "string"
+    },
+    "karagir_id": {
+      "type": "string"
+    },
+    "karagir_name": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "work_description": {
+      "type": "string"
+    },
+    "item_description": {
+      "type": "string"
+    },
+    "metal_type": {
+      "type": "string"
+    },
+    "purity_display": {
+      "type": "string"
+    },
+    "gross_weight": {
+      "type": "number"
+    },
+    "net_weight": {
+      "type": "number"
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "expected_delivery_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "labour_charge": {
+      "type": "number",
+      "default": 0
+    },
+    "advance_payment": {
+      "type": "number",
+      "default": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "ASSIGNED",
+        "IN_PROGRESS",
+        "READY",
+        "DELIVERED",
+        "CANCELLED"
+      ],
+      "default": "PENDING"
+    },
+    "order_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "assigned_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completion_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "delivery_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "order_number",
+    "karagir_id",
+    "work_description",
+    "order_date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

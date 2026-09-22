@@ -1,0 +1,40 @@
+{
+  "name": "PurityMaster",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "metal_type": {
+      "type": "string",
+      "enum": [
+        "gold",
+        "silver",
+        "diamond"
+      ]
+    },
+    "purity_value": {
+      "type": "number",
+      "description": "Karat value for rate calculation (e.g. 24, 22, 18, 14)"
+    },
+    "display_format": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "name",
+    "metal_type",
+    "purity_value",
+    "display_format"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

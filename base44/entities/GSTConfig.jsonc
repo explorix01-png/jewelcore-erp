@@ -1,0 +1,48 @@
+{
+  "name": "GSTConfig",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "gst_rate": {
+      "type": "number",
+      "description": "Total GST rate (e.g. 3 for 3%)"
+    },
+    "cgst_rate": {
+      "type": "number",
+      "description": "CGST portion for intra-state (e.g. 1.5)"
+    },
+    "sgst_rate": {
+      "type": "number",
+      "description": "SGST portion for intra-state (e.g. 1.5)"
+    },
+    "igst_rate": {
+      "type": "number",
+      "description": "IGST rate for inter-state (equals gst_rate)"
+    },
+    "applicable_from": {
+      "type": "string",
+      "format": "date"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "description": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "gst_rate",
+    "cgst_rate",
+    "sgst_rate"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

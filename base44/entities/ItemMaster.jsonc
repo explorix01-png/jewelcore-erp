@@ -1,0 +1,55 @@
+{
+  "name": "ItemMaster",
+  "type": "object",
+  "properties": {
+    "item_code": {
+      "type": "string",
+      "description": "Internal system identifier. Optional \u2014 items can be identified by HUID and/or Barcode instead."
+    },
+    "item_name": {
+      "type": "string"
+    },
+    "category_id": {
+      "type": "string"
+    },
+    "category_name": {
+      "type": "string"
+    },
+    "metal_type": {
+      "type": "string",
+      "enum": [
+        "gold",
+        "silver",
+        "diamond"
+      ]
+    },
+    "purity_id": {
+      "type": "string"
+    },
+    "purity_display": {
+      "type": "string"
+    },
+    "purity_value": {
+      "type": "number",
+      "default": 0,
+      "description": "Snapshot of PurityMaster.purity_value (percentage) \u2014 used for fine weight calculation"
+    },
+    "hsn": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "item_name",
+    "metal_type"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

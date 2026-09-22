@@ -1,0 +1,102 @@
+{
+  "name": "InventoryItem",
+  "type": "object",
+  "properties": {
+    "item_id": {
+      "type": "string"
+    },
+    "item_name": {
+      "type": "string"
+    },
+    "item_code": {
+      "type": "string"
+    },
+    "barcode": {
+      "type": "string"
+    },
+    "huid": {
+      "type": "string",
+      "description": "Hallmark Unique ID (BIS). Optional \u2014 only required when ShopSettings.huid_enabled is ON. Must be unique."
+    },
+    "category_name": {
+      "type": "string"
+    },
+    "metal_type": {
+      "type": "string",
+      "enum": [
+        "gold",
+        "silver",
+        "diamond"
+      ]
+    },
+    "purity_display": {
+      "type": "string"
+    },
+    "purity_value": {
+      "type": "number",
+      "default": 0,
+      "description": "Snapshot of PurityMaster.purity_value (percentage) \u2014 used for fine weight calculation"
+    },
+    "fine_weight": {
+      "type": "number",
+      "default": 0,
+      "description": "Fine weight = net_weight \u00d7 purity_value / 100. Auto-calculated, never manually edited."
+    },
+    "hsn": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "gross_weight": {
+      "type": "number",
+      "default": 0
+    },
+    "stone_weight": {
+      "type": "number",
+      "default": 0,
+      "description": "Less weight deducted from gross (Less Wt). Net = Gross \u2212 Less. Also known as stone/less weight."
+    },
+    "net_weight": {
+      "type": "number",
+      "default": 0
+    },
+    "wastage": {
+      "type": "number",
+      "default": 0
+    },
+    "low_stock_threshold": {
+      "type": "number",
+      "default": 0,
+      "description": "Per-item low-stock threshold. 0 means use the shop-level default."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "in_stock",
+        "low_stock",
+        "out_of_stock"
+      ],
+      "default": "in_stock"
+    },
+    "is_archived": {
+      "type": "boolean",
+      "default": false,
+      "description": "Soft-archive flag \u2014 archived items are hidden from active inventory but retain full transaction history"
+    }
+  },
+  "required": [
+    "item_name",
+    "metal_type"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

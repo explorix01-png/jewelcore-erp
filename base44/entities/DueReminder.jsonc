@@ -1,0 +1,60 @@
+{
+  "name": "DueReminder",
+  "type": "object",
+  "properties": {
+    "bill_id": {
+      "type": "string"
+    },
+    "bill_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "due_amount": {
+      "type": "number",
+      "default": 0,
+      "description": "Remaining due amount at time of reminder setting (updated on partial collection)"
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date",
+      "description": "The bill date"
+    },
+    "reminder_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date when the reminder notification should fire"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "notified",
+        "cancelled"
+      ],
+      "default": "active"
+    },
+    "notification_sent": {
+      "type": "boolean",
+      "default": false,
+      "description": "Prevents duplicate notifications \u2014 set true after first notification"
+    },
+    "created_by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "bill_id",
+    "reminder_date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

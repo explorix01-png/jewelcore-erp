@@ -1,0 +1,38 @@
+{
+  "name": "CategoryMaster",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "parent_category_id": {
+      "type": "string"
+    },
+    "parent_category_name": {
+      "type": "string"
+    },
+    "metal_type": {
+      "type": "string",
+      "enum": [
+        "gold",
+        "silver",
+        "diamond",
+        "mixed"
+      ]
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "name",
+    "metal_type"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

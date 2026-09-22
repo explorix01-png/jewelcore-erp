@@ -1,0 +1,166 @@
+{
+  "name": "PurchaseItem",
+  "type": "object",
+  "properties": {
+    "purchase_id": {
+      "type": "string"
+    },
+    "item_id": {
+      "type": "string"
+    },
+    "item_name": {
+      "type": "string"
+    },
+    "item_code": {
+      "type": "string"
+    },
+    "huid": {
+      "type": "string",
+      "description": "Hallmark Unique ID snapshot at time of purchase \u2014 the jewellery item's official customer-facing identification number"
+    },
+    "metal_type": {
+      "type": "string",
+      "enum": [
+        "gold",
+        "silver",
+        "diamond"
+      ]
+    },
+    "purity_display": {
+      "type": "string"
+    },
+    "purity_value": {
+      "type": "number",
+      "default": 0,
+      "description": "Snapshot of PurityMaster.purity_value (percentage) at time of purchase"
+    },
+    "fine_weight": {
+      "type": "number",
+      "default": 0,
+      "description": "Fine weight = net_weight \u00d7 purity_value / 100 (snapshot at time of purchase)"
+    },
+    "category_name": {
+      "type": "string"
+    },
+    "hsn": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "gross_weight": {
+      "type": "number"
+    },
+    "stone_weight": {
+      "type": "number",
+      "default": 0,
+      "description": "Less weight deducted from gross (Less Wt). Net = Gross \u2212 Less. Snapshot at time of purchase."
+    },
+    "net_weight": {
+      "type": "number"
+    },
+    "wastage": {
+      "type": "number"
+    },
+    "wastage_type": {
+      "type": "string",
+      "enum": [
+        "percentage",
+        "fixed_weight"
+      ],
+      "description": "Wastage calculation mode. When unset, legacy mode: wastage is % of metal value as separate charge."
+    },
+    "wastage_weight": {
+      "type": "number",
+      "default": 0,
+      "description": "Calculated wastage weight in grams (snapshot at time of purchase)"
+    },
+    "chargeable_weight": {
+      "type": "number",
+      "default": 0,
+      "description": "Net weight + wastage weight (snapshot at time of purchase)"
+    },
+    "rate_per_gram": {
+      "type": "number",
+      "default": 0,
+      "description": "Rate per gram at time of purchase (snapshot)"
+    },
+    "making_charge": {
+      "type": "number",
+      "default": 0,
+      "description": "Making charge \u2014 percentage, fixed \u20b9 per piece, or \u20b9 per gram (snapshot)"
+    },
+    "making_charge_type": {
+      "type": "string",
+      "enum": [
+        "percentage",
+        "fixed",
+        "per_gram"
+      ],
+      "default": "percentage"
+    },
+    "hallmarking_charge": {
+      "type": "number",
+      "default": 0,
+      "description": "Per-piece hallmarking charge (snapshot)"
+    },
+    "discount": {
+      "type": "number",
+      "default": 0
+    },
+    "gst_rate": {
+      "type": "number",
+      "default": 0
+    },
+    "metal_value": {
+      "type": "number",
+      "default": 0,
+      "description": "Total metal value for the line (snapshot)"
+    },
+    "making_amount": {
+      "type": "number",
+      "default": 0,
+      "description": "Total making amount for the line (snapshot)"
+    },
+    "taxable_amount": {
+      "type": "number",
+      "default": 0,
+      "description": "Total taxable amount for the line (snapshot)"
+    },
+    "gst_amount": {
+      "type": "number",
+      "default": 0,
+      "description": "Item-level GST amount (snapshot)"
+    },
+    "total": {
+      "type": "number",
+      "default": 0,
+      "description": "Total line amount including GST (snapshot)"
+    },
+    "item_status": {
+      "type": "string",
+      "default": "in_stock"
+    },
+    "purchase_price": {
+      "type": "number",
+      "default": 0,
+      "description": "Legacy total line price \u2014 kept for backward compatibility. New bills use total."
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "purchase_id",
+    "item_name",
+    "quantity",
+    "gross_weight",
+    "net_weight"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

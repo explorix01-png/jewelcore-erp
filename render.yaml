@@ -1,0 +1,50 @@
+# ===============================================================
+# JewelCore ERP — Render Staging Deployment Blueprint
+# ===============================================================
+# This blueprint defines the isolated staging environment for JewelCore ERP.
+# Features:
+# - Always-on Node.js web service serving backend API and PWA static assets
+# - Canonical Managed PostgreSQL database (persistent, daily backups, non-expiring)
+# - Persistent 10 GB disk for jewellery photos, barcodes, and invoice files
+# - Automated secret generation for JWT
+# - Built-in health check monitoring at /api/health
+# ===============================================================
+
+services:
+  # -------------------------------------------------------------
+  # Staging Web Service (Node.js + Express + React PWA)
+  # -------------------------------------------------------------
+  - type: web
+    name: jewelcore-erp-staging
+    env: node
+    plan: starter
+    autoDeploy: false # Prevent accidental automatic deployments; deploy via dashboard or approval
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true # Render securely generates a random secret on initial deploy
+      - key: UPLOADS_DIR
+        value: /opt/render/project/src/uploads
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jewelcore-db-staging
+          property: connectionString
+    disk:
+      name: jewelcore-staging-uploads
+      mountPath: /opt/render/project/src/uploads
+      sizeGB: 10
+
+databases:
+  # -------------------------------------------------------------
+  # Canonical Managed PostgreSQL Database (Staging)
+  # -------------------------------------------------------------
+  - name: jewelcore-db-staging
+    plan: starter
+    databaseName: jewelcore_erp_staging
+    user: jewelcore_admin

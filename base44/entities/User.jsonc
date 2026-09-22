@@ -1,0 +1,32 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "description": "The platform role of the user in the app",
+      "enum": [
+        "admin",
+        "user"
+      ]
+    },
+    "active_shop_role": {
+      "type": "string",
+      "description": "The business role (admin/staff/cashier)",
+      "enum": [
+        "admin",
+        "staff",
+        "cashier"
+      ]
+    },
+    "onboarding_completed": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the user completed shop onboarding"
+    }
+  },
+  "required": [
+    "role"
+  ],
+  "rls": {}
+}

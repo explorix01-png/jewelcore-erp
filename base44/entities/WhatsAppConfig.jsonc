@@ -1,0 +1,42 @@
+{
+  "name": "WhatsAppConfig",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "phone_number_id": {
+      "type": "string",
+      "description": "WhatsApp Cloud API Phone Number ID"
+    },
+    "business_account_id": {
+      "type": "string",
+      "description": "WhatsApp Business Account ID (optional)"
+    },
+    "access_token": {
+      "type": "string",
+      "description": "WhatsApp Cloud API access token \u2014 server-side only, NEVER returned to the client"
+    },
+    "default_message": {
+      "type": "string",
+      "description": "Default invoice message template (editable per share)"
+    },
+    "api_status": {
+      "type": "string",
+      "enum": [
+        "unconfigured",
+        "configured",
+        "error"
+      ],
+      "default": "unconfigured"
+    }
+  },
+  "required": [],
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

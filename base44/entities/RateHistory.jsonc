@@ -1,0 +1,52 @@
+{
+  "name": "RateHistory",
+  "type": "object",
+  "properties": {
+    "metal_type": {
+      "type": "string",
+      "enum": [
+        "gold",
+        "silver",
+        "diamond"
+      ]
+    },
+    "purity_id": {
+      "type": "string"
+    },
+    "purity_display": {
+      "type": "string"
+    },
+    "rate_per_gram": {
+      "type": "number"
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string"
+    },
+    "is_manual_override": {
+      "type": "boolean",
+      "default": false
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "metal_type",
+    "rate_per_gram",
+    "effective_date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "name": "InventoryTransaction",
+  "type": "object",
+  "properties": {
+    "item_id": {
+      "type": "string"
+    },
+    "item_name": {
+      "type": "string"
+    },
+    "transaction_type": {
+      "type": "string",
+      "enum": [
+        "PURCHASE_IN",
+        "SALE_OUT",
+        "RETURN_IN",
+        "EXCHANGE_IN",
+        "EXCHANGE_OUT",
+        "ADJUSTMENT_IN",
+        "ADJUSTMENT_OUT",
+        "OPENING_IN"
+      ]
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "gross_weight": {
+      "type": "number"
+    },
+    "net_weight": {
+      "type": "number"
+    },
+    "reference_type": {
+      "type": "string"
+    },
+    "reference_id": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "previous_stock": {
+      "type": "number"
+    },
+    "new_stock": {
+      "type": "number"
+    },
+    "date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "user_name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "item_id",
+    "transaction_type",
+    "quantity",
+    "date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

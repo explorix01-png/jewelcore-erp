@@ -1,0 +1,70 @@
+{
+  "name": "Payment",
+  "type": "object",
+  "properties": {
+    "bill_id": {
+      "type": "string"
+    },
+    "bill_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "payment_mode": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "upi",
+        "card",
+        "bank_transfer",
+        "credit_due",
+        "mixed",
+        "old_gold_exchange",
+        "old_gold_cash",
+        "partial",
+        "other"
+      ]
+    },
+    "payment_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reference": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "old_gold_details": {
+      "type": "string"
+    },
+    "payment_components": {
+      "type": "string"
+    },
+    "operation_id": {
+      "type": "string"
+    },
+    "user_name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "bill_id",
+    "amount",
+    "payment_mode",
+    "payment_date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

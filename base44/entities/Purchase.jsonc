@@ -1,0 +1,122 @@
+{
+  "name": "Purchase",
+  "type": "object",
+  "properties": {
+    "purchase_number": {
+      "type": "string"
+    },
+    "supplier_id": {
+      "type": "string"
+    },
+    "supplier_name": {
+      "type": "string"
+    },
+    "purchase_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "subtotal": {
+      "type": "number",
+      "default": 0
+    },
+    "making_charge_total": {
+      "type": "number",
+      "default": 0
+    },
+    "hallmarking_charge_total": {
+      "type": "number",
+      "default": 0
+    },
+    "other_charges": {
+      "type": "number",
+      "default": 0,
+      "description": "Additional charges added to taxable base before GST"
+    },
+    "gst_enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "gst_mode": {
+      "type": "string",
+      "enum": [
+        "intra",
+        "inter",
+        "none"
+      ],
+      "default": "none"
+    },
+    "gst_rate_snapshot": {
+      "type": "number",
+      "default": 0
+    },
+    "cgst": {
+      "type": "number",
+      "default": 0
+    },
+    "sgst": {
+      "type": "number",
+      "default": 0
+    },
+    "igst": {
+      "type": "number",
+      "default": 0
+    },
+    "total_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "paid_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "due_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "payment_mode": {
+      "type": "string"
+    },
+    "payment_details": {
+      "type": "string"
+    },
+    "payment_components": {
+      "type": "string",
+      "description": "JSON array of {mode, amount} for multi-mode payments"
+    },
+    "rate_snapshot": {
+      "type": "string"
+    },
+    "operation_id": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "processing",
+        "finalized",
+        "cancelled",
+        "failed"
+      ],
+      "default": "finalized"
+    }
+  },
+  "required": [
+    "purchase_number",
+    "supplier_id",
+    "purchase_date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

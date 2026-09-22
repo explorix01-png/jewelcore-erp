@@ -1,0 +1,155 @@
+{
+  "name": "Bill",
+  "type": "object",
+  "properties": {
+    "bill_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "customer_mobile": {
+      "type": "string"
+    },
+    "customer_gst_number": {
+      "type": "string"
+    },
+    "customer_state": {
+      "type": "string"
+    },
+    "bill_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "bill_source": {
+      "type": "string",
+      "enum": [
+        "inventory",
+        "manual",
+        "customer_purchase"
+      ],
+      "default": "inventory"
+    },
+    "subtotal": {
+      "type": "number"
+    },
+    "discount": {
+      "type": "number",
+      "default": 0
+    },
+    "other_charges": {
+      "type": "number",
+      "default": 0,
+      "description": "Additional charges added to taxable base before GST (e.g. for customer purchase workflow)"
+    },
+    "hallmarking_charge": {
+      "type": "number",
+      "default": 0
+    },
+    "gst_enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "gst_mode": {
+      "type": "string",
+      "enum": [
+        "intra",
+        "inter",
+        "none"
+      ],
+      "default": "intra"
+    },
+    "gst_rate_snapshot": {
+      "type": "number",
+      "default": 0
+    },
+    "cgst": {
+      "type": "number",
+      "default": 0
+    },
+    "sgst": {
+      "type": "number",
+      "default": 0
+    },
+    "igst": {
+      "type": "number",
+      "default": 0
+    },
+    "total_amount": {
+      "type": "number"
+    },
+    "paid_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "due_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "payment_mode": {
+      "type": "string"
+    },
+    "payment_details": {
+      "type": "string"
+    },
+    "payment_components": {
+      "type": "string",
+      "description": "JSON array of {mode, amount} for multi-mode payments"
+    },
+    "rate_snapshot": {
+      "type": "string"
+    },
+    "custom_rate_override": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when admin manually overrode the rate per gram for a historical bill date"
+    },
+    "aadhaar_number": {
+      "type": "string",
+      "description": "Customer Aadhaar card number \u2014 for gold/silver customer purchase workflow"
+    },
+    "pan_number": {
+      "type": "string",
+      "description": "Customer PAN number \u2014 for gold/silver customer purchase workflow"
+    },
+    "operation_id": {
+      "type": "string"
+    },
+    "public_token": {
+      "type": "string",
+      "description": "Cryptographically random public token used by the customer-facing QR bill view (no internal IDs exposed)"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "processing",
+        "finalized",
+        "cancelled",
+        "failed"
+      ],
+      "default": "finalized"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "is_deleted": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "bill_number",
+    "customer_id",
+    "bill_date",
+    "total_amount"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

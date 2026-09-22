@@ -1,0 +1,74 @@
+{
+  "name": "CustomerOrder",
+  "type": "object",
+  "properties": {
+    "order_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "required_item": {
+      "type": "string"
+    },
+    "design_details": {
+      "type": "string"
+    },
+    "expected_weight": {
+      "type": "number"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "order_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "expected_completion_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "karagir_id": {
+      "type": "string"
+    },
+    "karagir_name": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "NEW",
+        "ASSIGNED",
+        "IN_PROGRESS",
+        "READY",
+        "COMPLETED",
+        "DELIVERED",
+        "CANCELLED"
+      ],
+      "default": "NEW"
+    },
+    "delivery_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "delivered"
+      ],
+      "default": "pending"
+    }
+  },
+  "required": [
+    "order_number",
+    "customer_id",
+    "required_item",
+    "order_date"
+  ],
+  "rls": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  }
+}

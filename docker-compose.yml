@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # ===============================================================
+  # Canonical PostgreSQL Database Service
+  # ===============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: jewelcore-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jewelcore_user
+      POSTGRES_PASSWORD: jewelcore_secure_password_change_me
+      POSTGRES_DB: jewelcore_erp
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jewelcore_user -d jewelcore_erp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===============================================================
+  # JewelCore ERP Application Service (Backend + Frontend)
+  # ===============================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jewelcore-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://jewelcore_user:jewelcore_secure_password_change_me@postgres:5432/jewelcore_erp?sslmode=disable
+      JWT_SECRET: jewelcore_production_random_secret_change_me_32char_minimum
+      UPLOADS_DIR: /app/uploads
+    volumes:
+      - uploads_data:/app/uploads
+
+volumes:
+  postgres_data:
+    driver: local
+  uploads_data:
+    driver: local
