@@ -13,7 +13,10 @@ import { generateLabelHtml, printLabelDirect, downloadBarcodePdf } from "@/lib/p
  * Supports configurable roll tail offset (e.g. +20mm for dumbbell tags loaded tail-first).
  */
 const LABEL_WIDTH_MM = 45;
-const LABEL_HEIGHT_MM = 20;
+// Measured on the physical roll: tag head 16mm tall, 19mm from one tag's top edge to the next.
+// The driver stock height must equal LABEL_PITCH_MM so the printer feeds exactly one tag per page.
+const LABEL_HEIGHT_MM = 16;
+const LABEL_PITCH_MM = 19;
 const CARRIER_WIDTH_MM = 95;
 const PX_PER_MM = 3.7795;
 const PREVIEW_MAX_PX = 580;
@@ -64,7 +67,7 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
     if (!open || !item || !barcodeValue) return;
     let cancelled = false;
     generateLabelHtml(item, settings, 1, {
-      offsetX, labelWidth: LABEL_WIDTH_MM, labelHeight: LABEL_HEIGHT_MM, preview: true,
+      offsetX, labelWidth: LABEL_WIDTH_MM, labelHeight: LABEL_HEIGHT_MM, pageHeight: LABEL_PITCH_MM, preview: true,
     }).then((html) => { if (!cancelled) setPreviewHtml(html); });
     return () => { cancelled = true; };
   }, [open, item, settings, offsetX, barcodeValue]);
@@ -74,14 +77,14 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
   const totalWidthMm = offsetX > 0 ? Math.max(CARRIER_WIDTH_MM, offsetX + LABEL_WIDTH_MM) : LABEL_WIDTH_MM;
   const previewScale = Math.min(3.2, previewMaxPx / (totalWidthMm * PX_PER_MM));
   const previewWidthPx = Math.round(totalWidthMm * PX_PER_MM * previewScale);
-  const previewHeightPx = Math.round(LABEL_HEIGHT_MM * PX_PER_MM * previewScale);
+  const previewHeightPx = Math.round(LABEL_PITCH_MM * PX_PER_MM * previewScale);
   const stockQty = Number(item.quantity) || 1;
 
   const handlePrint = async () => {
     setPrinting(true);
     setPrintSuccess(false);
     try {
-      const ok = await printLabelDirect(item, settings, copies, { offsetX, labelWidth: 45, labelHeight: 20 });
+      const ok = await printLabelDirect(item, settings, copies, { offsetX, labelWidth: LABEL_WIDTH_MM, labelHeight: LABEL_HEIGHT_MM, pageHeight: LABEL_PITCH_MM });
       if (ok) {
         setPrintSuccess(true);
         setTimeout(() => setPrintSuccess(false), 5000);
@@ -94,7 +97,7 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      await downloadBarcodePdf(item, settings, copies, { offsetX, labelWidth: 45, labelHeight: 20 });
+      await downloadBarcodePdf(item, settings, copies, { offsetX, labelWidth: LABEL_WIDTH_MM, labelHeight: LABEL_HEIGHT_MM });
     } finally {
       setDownloading(false);
     }
@@ -114,7 +117,7 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
                 TSC TE244 (203 DPI)
               </Badge>
               <Badge variant="secondary" className="font-mono text-[11px]">
-                45mm × 20mm Tag (Image 1)
+                45mm × 16mm Tag (19mm pitch)
               </Badge>
               <Badge variant="outline" className="font-mono text-[11px] text-muted-foreground">
                 95mm Roll Carrier
@@ -187,7 +190,7 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
             </div>
             <p className="text-[11px] text-muted-foreground">
               {offsetX > 0
-                ? "Spaces past the non-printable 45mm tail strip on 95mm carrier paper so the content prints squarely inside the 45×20mm jewellery tag."
+                ? "Spaces past the non-printable 45mm tail strip on 95mm carrier paper so the content prints squarely inside the 45×16mm jewellery tag."
                 : "Standard printing starting directly at the 0mm edge (use if roll is loaded flaps first, or printer driver already has a left margin)."}
             </p>
           </div>
@@ -196,7 +199,7 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <Label className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-                Tag Preview (45mm × 20mm)
+                Tag Preview (45mm × 16mm)
               </Label>
               <span className="text-[11px] text-muted-foreground">
                 2-Column Layout (Identification | Weights & Codes)
@@ -213,7 +216,7 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
                   srcDoc={previewHtml}
                   style={{
                     width: `${totalWidthMm}mm`,
-                    height: `${LABEL_HEIGHT_MM}mm`,
+                    height: `${LABEL_PITCH_MM}mm`,
                     border: "none",
                     transform: `scale(${previewScale})`,
                     transformOrigin: "top left",
@@ -304,7 +307,7 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
             className="border"
           >
             <Download className="w-4 h-4 mr-1.5" />
-            {downloading ? "Generating PDF..." : "Download PDF (45×20mm)"}
+            {downloading ? "Generating PDF..." : "Download PDF (45×16mm)"}
           </Button>
           <Button
             onClick={handlePrint}

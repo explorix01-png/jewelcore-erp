@@ -108,6 +108,11 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
   const labelWidth = Number(options?.labelWidth ?? settings?.barcode_label_width ?? 45);
   const labelHeight = Number(options?.labelHeight ?? settings?.barcode_label_height ?? 20);
   const panelWidth = (labelWidth / 2).toFixed(1);
+  // Page height = tag-to-tag pitch (head + gap) so the printer feeds exactly one tag per page.
+  // The tag content (labelHeight) sits at the top of each page. Defaults to labelHeight.
+  const pageHeight = Math.max(labelHeight, Number(options?.pageHeight ?? settings?.barcode_label_pitch ?? labelHeight));
+  // Tag heads shorter than the legacy 20mm get a tighter layout so every row stays inside the head.
+  const compact = labelHeight < 18.5;
 
   const offsetX = Math.max(0, Number(options?.offsetX ?? settings?.barcode_offset_x ?? 0));
   const previewCss = options?.preview
@@ -124,7 +129,7 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
   let pagesHtml = "";
   for (let c = 0; c < numCopies; c++) {
     pagesHtml += `
-      <div class="label-page">
+      <div class="label-page${compact ? " compact" : ""}">
         ${offsetX > 0 ? `<div class="tail-spacer" style="width: ${offsetX}mm; height: ${labelHeight}mm; flex-shrink: 0;"></div>` : ""}
 
         <!-- 45mm × 20mm TAG BODY (Image 1 Specification) -->
@@ -176,7 +181,7 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
   <style>
     /* Exact physical size calibrated for TSC TE244 — 45mm x 20mm tag (95mm roll carrier) */
     @page {
-      size: ${totalWidthMm}mm ${labelHeight}mm;
+      size: ${totalWidthMm}mm ${pageHeight}mm;
       margin: 0;
     }
     @media print {
@@ -195,7 +200,11 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
       .label-page {
         page-break-inside: avoid;
         break-inside: avoid;
+        break-after: page;
         flex-shrink: 0;
+      }
+      .label-page:last-child {
+        break-after: auto;
       }
     }
     * {
@@ -213,9 +222,11 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
     }
     .label-page {
       width: ${totalWidthMm}mm;
-      height: ${labelHeight}mm;
+      /* Slightly under the page height so rounding never spills a blank page (which would feed an extra tag). */
+      height: ${(pageHeight - (pageHeight > labelHeight ? 0.3 : 0)).toFixed(2)}mm;
       display: flex;
       flex-direction: row;
+      align-items: flex-start;
       overflow: hidden;
       background: #ffffff;
       position: relative;
@@ -381,6 +392,14 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
       font-size: 6.5pt;
     }
+    /* Compact layout for tag heads shorter than 18.5mm (e.g. 16mm dumbbell head) */
+    .compact .front-panel { padding: 0.5mm 1mm 0.5mm 0.8mm; }
+    .compact .item-name { font-size: 6.5pt; line-height: 1.15; margin-top: 0; }
+    .compact .barcode-container { height: 6mm; margin: 0.1mm 0; }
+    .compact .barcode-container.qr-mode { height: 7mm; }
+    .compact .meta-group { gap: 0.1mm; }
+    .compact .meta-row { font-size: 6pt; line-height: 1.1; }
+    .compact .back-panel { padding: 0.4mm 0.8mm 0.4mm 1.2mm; }
     ${previewCss}
   </style>
 </head>
@@ -421,7 +440,8 @@ export async function printLabelDirect(item, settings, copies = 1, options = {})
     iframe.style.right = "0";
     iframe.style.bottom = "0";
     iframe.style.width = `${totalWidthMm}mm`;
-    iframe.style.height = `${labelHeight * Math.max(1, parseInt(copies, 10) || 1)}mm`;
+    const pageHeight = Math.max(labelHeight, Number(options?.pageHeight ?? settings?.barcode_label_pitch ?? labelHeight));
+    iframe.style.height = `${pageHeight * Math.max(1, parseInt(copies, 10) || 1)}mm`;
     iframe.style.border = "none";
     iframe.style.opacity = "0.001";
     iframe.style.pointerEvents = "none";
