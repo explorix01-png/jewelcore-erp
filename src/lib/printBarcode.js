@@ -17,6 +17,15 @@ import QRCode from "qrcode";
 
 const esc = (s) => String(s || "").trim();
 
+// Largest font size (pt) at which `chars` monospace characters fit in `widthMm`, clamped to [minPt, maxPt].
+// 1pt = 0.3528mm; bold monospace glyphs are ~0.62em wide.
+const INLINE_CODE_WIDTH_MM = 10; // value column beside the 10mm label column
+const MIN_INLINE_CODE_PT = 5;
+const fitMonoPt = (chars, widthMm, maxPt, minPt) => {
+  const fit = widthMm / (Math.max(1, chars) * 0.62 * 0.3528);
+  return Math.min(maxPt, Math.max(minPt, Number(fit.toFixed(2))));
+};
+
 /**
  * Generate a standalone SVG barcode string (Code 128 or QR) sized for the front panel.
  * Code 128 uses crisp vector rects with exact integer modules for 203 DPI thermal heads.
@@ -74,7 +83,6 @@ export async function generateBarcodeSvg(barcodeValue, barcodeType = "code128") 
  */
 export async function generateLabelHtml(item, settings, copies = 1, options = {}) {
   const barcodeType = settings?.barcode_type || "code128";
-  const shopName = esc(settings?.shop_name || "");
   const itemName = esc(item.item_name || "Jewellery Item");
   const barcodeValue = esc(item.barcode || item.item_code || "");
   const huid = esc(item.huid || "—");
@@ -83,9 +91,15 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
   const gw = `${Number(item.gross_weight || 0).toFixed(3)}g`;
   const lw = `${Number(item.stone_weight ?? item.less_weight ?? 0).toFixed(3)}g`;
   const nw = `${Number(item.net_weight || 0).toFixed(3)}g`;
-  const fine = `${Number(item.fine_weight || 0).toFixed(3)}g`;
 
   const barcodeSvg = await generateBarcodeSvg(barcodeValue, barcodeType);
+  // Shrink long HUID / item code so they print in full instead of being clipped.
+  const huidPt = fitMonoPt(huid.length + 6, 20, 6.5, 3.8);
+  // Short codes sit inline beside the "Item Code" label (like the weight rows);
+  // only long codes drop to their own full-width line.
+  const inlineCodePt = fitMonoPt(itemCode.length, INLINE_CODE_WIDTH_MM, 6.5, 3.8);
+  const codeInline = inlineCodePt >= MIN_INLINE_CODE_PT;
+  const itemCodePt = codeInline ? inlineCodePt : fitMonoPt(itemCode.length, 20, 6.5, 3.8);
   const numCopies = Math.max(1, parseInt(copies, 10) || 1);
 
   // Label geometry:
@@ -96,6 +110,9 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
   const panelWidth = (labelWidth / 2).toFixed(1);
 
   const offsetX = Math.max(0, Number(options?.offsetX ?? settings?.barcode_offset_x ?? 0));
+  const previewCss = options?.preview
+    ? `html, body { overflow: hidden !important; } body { background: #e2e8f0 !important; } .tag-body { background: #ffffff; outline: 0.25mm solid #64748b; outline-offset: -0.25mm; }`
+    : "";
 
   // Total carrier page width for TSC TE244 printer:
   // When offsetX > 0 (dumbbell roll on 95mm carrier), total page width is 95mm.
@@ -115,7 +132,6 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
           <!-- LEFT / FRONT PANEL (Identification, Barcode, Purity, HUID) -->
           <div class="panel front-panel">
             <div class="header-group">
-              ${shopName ? `<div class="shop-name">${shopName}</div>` : ""}
               <div class="item-name">${itemName}</div>
             </div>
             <div class="barcode-container ${barcodeType === "qr" ? "qr-mode" : ""}">
@@ -123,24 +139,28 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
             </div>
             <div class="meta-group">
               <div class="meta-row">
-                <span class="meta-lbl">Purity</span>
+                <span class="meta-lbl">Purity:</span>
                 <span class="meta-val font-bold">${purity}</span>
               </div>
               <div class="meta-row">
-                <span class="meta-lbl">HUID</span>
-                <span class="meta-val mono font-bold">${huid}</span>
+                <span class="meta-lbl" style="font-size: ${huidPt}pt;">HUID:</span>
+                <span class="meta-val mono font-bold" style="font-size: ${huidPt}pt;">${huid}</span>
               </div>
             </div>
           </div>
 
           <!-- RIGHT / BACK PANEL (GW, LW, NW, Fine, Item Code) -->
           <div class="panel back-panel">
-            <table class="spec-table">
-              <tr><td class="spec-lbl">GW</td><td class="spec-val">${gw}</td></tr>
-              <tr><td class="spec-lbl">LW</td><td class="spec-val">${lw}</td></tr>
-              <tr><td class="spec-lbl">NW</td><td class="spec-val font-bold">${nw}</td></tr>
-              <tr><td class="spec-lbl">Fine</td><td class="spec-val">${fine}</td></tr>
-              <tr><td class="spec-lbl">Code</td><td class="spec-val mono font-bold">${itemCode}</td></tr>
+            <table class="spec-table ${codeInline ? "" : "stacked"}">
+              <tr><td class="spec-lbl">Gross Wt</td><td class="spec-val">${gw}</td></tr>
+              <tr><td class="spec-lbl">Less Wt</td><td class="spec-val">${lw}</td></tr>
+              <tr><td class="spec-lbl">Net Wt</td><td class="spec-val font-bold">${nw}</td></tr>
+              ${codeInline
+                ? `<tr><td class="spec-lbl">Item Code</td><td class="spec-val mono font-bold" style="font-size: ${itemCodePt}pt;">${itemCode}</td></tr>`
+                : `<tr class="code-row"><td colspan="2" class="code-cell">
+                <div class="spec-lbl code-lbl">Item Code</div>
+                <div class="code-val mono font-bold" style="font-size: ${itemCodePt}pt;">${itemCode}</div>
+              </td></tr>`}
             </table>
           </div>
         </div>
@@ -160,24 +180,22 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
       margin: 0;
     }
     @media print {
+      /* Copies flow one under another. On a 95x20mm label page each copy fills exactly one page,
+         so it still prints one label per page; on a larger sheet they stack vertically. */
       html, body {
         width: ${totalWidthMm}mm;
-        height: ${labelHeight}mm;
+        height: auto;
         margin: 0 !important;
         padding: 0 !important;
-        overflow: hidden;
+        overflow: visible;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
         background: #ffffff !important;
       }
       .label-page {
-        page-break-after: always;
         page-break-inside: avoid;
-        break-after: page;
-      }
-      .label-page:last-child {
-        page-break-after: auto;
-        break-after: auto;
+        break-inside: avoid;
+        flex-shrink: 0;
       }
     }
     * {
@@ -221,7 +239,7 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
       flex-shrink: 0;
     }
     .front-panel {
-      padding: 0.6mm 1.2mm 0.6mm 0.8mm;
+      padding: 0.8mm 1.2mm 0.8mm 0.8mm;
       border-right: 0.5px dashed #000000;
       justify-content: space-between;
       align-items: stretch;
@@ -232,7 +250,7 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
       overflow: hidden;
     }
     .shop-name {
-      font-size: 4.2pt;
+      font-size: 6pt;
       font-weight: 800;
       line-height: 1.05;
       overflow: hidden;
@@ -243,9 +261,9 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
       color: #000000;
     }
     .item-name {
-      font-size: 5.2pt;
+      font-size: 7pt;
       font-weight: 700;
-      line-height: 1.1;
+      line-height: 1.25;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -254,7 +272,7 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
     }
     .barcode-container {
       width: 100%;
-      height: 6.8mm;
+      height: 7.5mm;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -280,7 +298,7 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
       display: flex;
       align-items: baseline;
       justify-content: space-between;
-      font-size: 4.8pt;
+      font-size: 6.5pt;
       line-height: 1.1;
       white-space: nowrap;
       overflow: hidden;
@@ -288,7 +306,7 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
     .meta-lbl {
       font-weight: 700;
       color: #222222;
-      font-size: 4.5pt;
+      font-size: 6pt;
     }
     .meta-val {
       color: #000000;
@@ -298,15 +316,36 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
     }
     .back-panel {
       padding: 0.6mm 0.8mm 0.6mm 1.2mm;
-      justify-content: center;
+      justify-content: flex-start;
     }
     .spec-table {
       width: 100%;
+      height: 100%;
       border-collapse: collapse;
       table-layout: fixed;
     }
     .spec-table tr {
-      height: 3.2mm;
+      height: 25%;
+    }
+    .spec-table.stacked tr {
+      height: 21%;
+    }
+    .spec-table.stacked tr.code-row {
+      height: 37%;
+    }
+    .code-cell {
+      vertical-align: top !important;
+      padding-top: 0.3mm !important;
+    }
+    .code-lbl {
+      width: auto;
+      display: block;
+    }
+    .code-val {
+      width: 100%;
+      line-height: 1.15;
+      white-space: nowrap;
+      overflow: visible;
     }
     .spec-table td {
       padding: 0;
@@ -314,22 +353,23 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
       vertical-align: middle;
     }
     .spec-lbl {
-      font-size: 4.6pt;
+      font-size: 5.6pt;
       font-weight: 700;
       color: #000000;
-      width: 6.8mm;
+      width: 10mm;
+      padding-right: 0.4mm;
       white-space: nowrap;
       overflow: hidden;
     }
     .spec-val {
-      font-size: 4.8pt;
-      font-weight: 500;
+      font-size: 6.5pt;
+      font-weight: 600;
       color: #000000;
       text-align: left;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      width: 13.5mm;
+      width: 10.5mm;
     }
     .font-bold {
       font-weight: 700;
@@ -339,8 +379,9 @@ export async function generateLabelHtml(item, settings, copies = 1, options = {}
     }
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
-      font-size: 4.5pt;
+      font-size: 6.5pt;
     }
+    ${previewCss}
   </style>
 </head>
 <body>
@@ -380,7 +421,7 @@ export async function printLabelDirect(item, settings, copies = 1, options = {})
     iframe.style.right = "0";
     iframe.style.bottom = "0";
     iframe.style.width = `${totalWidthMm}mm`;
-    iframe.style.height = `${labelHeight}mm`;
+    iframe.style.height = `${labelHeight * Math.max(1, parseInt(copies, 10) || 1)}mm`;
     iframe.style.border = "none";
     iframe.style.opacity = "0.001";
     iframe.style.pointerEvents = "none";
@@ -456,7 +497,6 @@ export async function generateBarcodePdf(item, settings, copies = 1, options = {
     }
 
     const padding = 0.6;
-    const shopName = esc(settings?.shop_name || "");
     const itemName = esc(item.item_name || "Jewellery Item");
     const barcodeValue = esc(item.barcode || item.item_code || "");
     const huid = esc(item.huid || "—");
@@ -465,28 +505,21 @@ export async function generateBarcodePdf(item, settings, copies = 1, options = {
     const gw = `${Number(item.gross_weight || 0).toFixed(3)}g`;
     const lw = `${Number(item.stone_weight ?? item.less_weight ?? 0).toFixed(3)}g`;
     const nw = `${Number(item.net_weight || 0).toFixed(3)}g`;
-    const fine = `${Number(item.fine_weight || 0).toFixed(3)}g`;
 
     // === LEFT / FRONT PANEL (offsetX to offsetX + panelWidth) ===
     let y = padding + 0.3;
     const leftMargin = offsetX + padding + 0.2;
     const leftWidth = panelWidth - padding * 2 - 0.4;
 
-    if (shopName) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(4.2);
-      doc.text(shopName, leftMargin, y + 1.1);
-      y += 1.8;
-    }
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(5.0);
+    doc.setFontSize(7);
     doc.text(itemName, leftMargin, y + 1.4);
     y += 2.2;
 
     // Barcode area
     const barcodeTop = y;
-    const barcodeHeight = 6.2;
+    const barcodeHeight = 5.6;
     const barcodeWidth = leftWidth;
 
     if (barcodeType === "qr") {
@@ -518,12 +551,12 @@ export async function generateBarcodePdf(item, settings, copies = 1, options = {
 
     // Purity & HUID lines
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(4.6);
-    doc.text("Purity: " + purity, leftMargin, y + 1.2);
+    doc.setFontSize(6.5);
+    doc.text(purity, leftMargin, y + 1.2);
     y += 2.0;
 
     doc.setFont("courier", "bold");
-    doc.setFontSize(4.5);
+    doc.setFontSize(fitMonoPt(huid.length + 6, leftWidth, 6, 3.8));
     doc.text("HUID: " + huid, leftMargin, y + 1.2);
 
     // Dashed center divider line
@@ -536,24 +569,39 @@ export async function generateBarcodePdf(item, settings, copies = 1, options = {
     // === RIGHT / BACK PANEL (dividerX to dividerX + panelWidth) ===
     const rightMargin = dividerX + padding + 0.6;
     const rightItems = [
-      ["GW", gw],
-      ["LW", lw],
-      ["NW", nw],
-      ["Fine", fine],
-      ["Code", itemCode],
+      ["Gross Wt", gw],
+      ["Less Wt", lw],
+      ["Net Wt", nw],
     ];
 
     const rightAreaTop = padding + 0.4;
-    const rightRowHeight = 3.2;
+    const inlineCodePdfPt = fitMonoPt(itemCode.length, INLINE_CODE_WIDTH_MM, 6.5, 3.8);
+    const codeInline = inlineCodePdfPt >= MIN_INLINE_CODE_PT;
+    const rightRowHeight = codeInline ? 4.6 : 3.9;
 
-    doc.setFontSize(4.7);
+    doc.setFontSize(6.5);
     rightItems.forEach((row, i) => {
       const rowY = rightAreaTop + i * rightRowHeight + 1.8;
       doc.setFont("helvetica", "bold");
       doc.text(row[0], rightMargin, rowY);
-      doc.setFont(row[0] === "NW" || row[0] === "Code" ? "courier" : "helvetica", row[0] === "NW" || row[0] === "Code" ? "bold" : "normal");
-      doc.text(row[1], rightMargin + 6.8, rowY);
+      doc.setFont(row[0] === "Net Wt" ? "courier" : "helvetica", row[0] === "Net Wt" ? "bold" : "normal");
+      doc.text(row[1], rightMargin + 10, rowY);
     });
+
+    const codeLabelY = rightAreaTop + rightItems.length * rightRowHeight + (codeInline ? 1.8 : 2.0);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(5.6);
+    doc.text("Item Code", rightMargin, codeLabelY);
+    doc.setFont("courier", "bold");
+    if (codeInline) {
+      // Short code: same line as the label, like the weight rows.
+      doc.setFontSize(inlineCodePdfPt);
+      doc.text(itemCode, rightMargin + 10, codeLabelY);
+    } else {
+      // Long code: own full-width line below the label so it isn't clipped.
+      doc.setFontSize(fitMonoPt(itemCode.length, panelWidth - padding - 0.6 - 0.8, 6.5, 3.8));
+      doc.text(itemCode, rightMargin, codeLabelY + 3);
+    }
   }
 
   return doc;

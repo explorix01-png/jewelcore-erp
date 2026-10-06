@@ -5,16 +5,22 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Printer, Download, CheckCircle2, Info } from "lucide-react";
-import { generateBarcodeSvg, printLabelDirect, downloadBarcodePdf } from "@/lib/printBarcode";
+import { generateLabelHtml, printLabelDirect, downloadBarcodePdf } from "@/lib/printBarcode";
 
 /**
  * Interactive Print Preview & Printing Modal for TSC TE244 (40mm × 20mm).
  * Renders an exact-scale WYSIWYG preview of both 20×20mm panels side-by-side.
  * Supports configurable roll tail offset (e.g. +20mm for dumbbell tags loaded tail-first).
  */
+const LABEL_WIDTH_MM = 45;
+const LABEL_HEIGHT_MM = 20;
+const CARRIER_WIDTH_MM = 95;
+const PX_PER_MM = 3.7795;
+const PREVIEW_MAX_PX = 580;
+
 export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
   const [copies, setCopies] = useState(1);
-  const [svgHtml, setSvgHtml] = useState("");
+  const [previewHtml, setPreviewHtml] = useState("");
   const [printing, setPrinting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [printSuccess, setPrintSuccess] = useState(false);
@@ -25,12 +31,26 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
     : 48;
   const [offsetX, setOffsetX] = useState(initialOffset);
 
+  // Fit the preview to the actual width of its container so it never needs a scrollbar.
+  const [previewBoxEl, setPreviewBoxEl] = useState(null);
+  const [previewMaxPx, setPreviewMaxPx] = useState(PREVIEW_MAX_PX);
+  useEffect(() => {
+    if (!previewBoxEl) return;
+    const update = () => {
+      const w = previewBoxEl.clientWidth;
+      if (w > 0) setPreviewMaxPx(Math.min(PREVIEW_MAX_PX, w));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(previewBoxEl);
+    return () => ro.disconnect();
+  }, [previewBoxEl]);
+
   const barcodeType = settings?.barcode_type || "code128";
   const barcodeValue = item?.barcode || item?.item_code || "";
 
   useEffect(() => {
     if (open && barcodeValue) {
-      generateBarcodeSvg(barcodeValue, barcodeType).then(setSvgHtml);
       setCopies(1);
       setPrintSuccess(false);
       const saved = (settings?.barcode_offset_x !== undefined && Number(settings.barcode_offset_x) !== 20)
@@ -40,17 +60,21 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
     }
   }, [open, barcodeValue, barcodeType, settings]);
 
+  useEffect(() => {
+    if (!open || !item || !barcodeValue) return;
+    let cancelled = false;
+    generateLabelHtml(item, settings, 1, {
+      offsetX, labelWidth: LABEL_WIDTH_MM, labelHeight: LABEL_HEIGHT_MM, preview: true,
+    }).then((html) => { if (!cancelled) setPreviewHtml(html); });
+    return () => { cancelled = true; };
+  }, [open, item, settings, offsetX, barcodeValue]);
+
   if (!item) return null;
 
-  const shopName = settings?.shop_name || "";
-  const itemName = item.item_name || "Jewellery Item";
-  const huid = item.huid || "—";
-  const itemCode = item.item_code || "—";
-  const purity = item.purity_display || item.purity || "—";
-  const gw = `${Number(item.gross_weight || 0).toFixed(3)}g`;
-  const lw = `${Number(item.stone_weight ?? item.less_weight ?? 0).toFixed(3)}g`;
-  const nw = `${Number(item.net_weight || 0).toFixed(3)}g`;
-  const fine = `${Number(item.fine_weight || 0).toFixed(3)}g`;
+  const totalWidthMm = offsetX > 0 ? Math.max(CARRIER_WIDTH_MM, offsetX + LABEL_WIDTH_MM) : LABEL_WIDTH_MM;
+  const previewScale = Math.min(3.2, previewMaxPx / (totalWidthMm * PX_PER_MM));
+  const previewWidthPx = Math.round(totalWidthMm * PX_PER_MM * previewScale);
+  const previewHeightPx = Math.round(LABEL_HEIGHT_MM * PX_PER_MM * previewScale);
   const stockQty = Number(item.quantity) || 1;
 
   const handlePrint = async () => {
@@ -78,8 +102,8 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[92vh] !flex flex-col gap-3 overflow-hidden">
+        <DialogHeader className="shrink-0">
           <div className="flex items-center justify-between gap-2 flex-wrap pr-6">
             <DialogTitle className="flex items-center gap-2 text-lg">
               <Printer className="w-5 h-5 text-amber-600" />
@@ -99,16 +123,15 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
           </div>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-3 py-1 flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
           {/* Hardware & Calibration Hint */}
-          <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 text-xs space-y-1.5">
-            <div className="flex items-center gap-1.5 font-semibold text-amber-900">
-              <Info className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>TSC TE244 Setup for Jewellery Tags (Image 1 Calibration)</span>
-            </div>
-            <p className="text-amber-800 text-[11px] leading-relaxed">
-              In Windows Print Dialog, select <strong>TSC TE244</strong>. Set Scale to <strong>100% / Actual Size</strong> and Margins to <strong>None (0mm)</strong>.
-              For dumbbell tag rolls (95mm roll carrier), use <strong>Dumbbell Tag (+48mm Offset)</strong> so the content lands directly inside the 45×20mm jewellery tag body.
+          <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs">
+            <p className="text-amber-800 text-[11px] leading-snug flex items-start gap-1.5">
+              <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-px" />
+              <span>
+                Select <strong>TSC TE244</strong>, Scale <strong>100%</strong>, Margins <strong>None</strong>.
+                For dumbbell rolls (95mm carrier) use <strong>+48mm Offset</strong>.
+              </span>
             </p>
           </div>
 
@@ -173,101 +196,37 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <Label className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-                Tag Layout Preview (45mm × 20mm Content Box — Image 1 Specification)
+                Tag Preview (45mm × 20mm)
               </Label>
               <span className="text-[11px] text-muted-foreground">
                 2-Column Layout (Identification | Weights & Codes)
               </span>
             </div>
 
-            {/* Scaled Preview Shell */}
-            <div className="border-2 border-slate-300 rounded-xl bg-slate-100 p-4 flex flex-col items-center justify-center shadow-inner overflow-x-auto">
-              <div className="flex items-center select-none py-1">
-                {/* Visual Representation of Tail if offset > 0 */}
-                {offsetX > 0 && (
-                  <div
-                    className="flex flex-col items-center justify-center bg-slate-200 border border-slate-300 border-r-0 rounded-l-md text-[9px] font-mono text-slate-500 text-center px-1"
-                    style={{ width: `${Math.min(130, offsetX * 3)}px`, height: "36px" }}
-                    title="Non-printable tail strip wraps around jewellery"
-                  >
-                    <span className="text-[8px] font-bold uppercase tracking-tight text-slate-600">Tail ({offsetX}mm)</span>
-                    <span className="text-[7px] text-slate-500">No print zone</span>
-                  </div>
-                )}
-
-                {/* 45mm × 20mm Printable Tag (Ratio 45:20 = 450px × 200px) */}
-                <div
-                  className="bg-white rounded-md shadow-md border border-slate-400 overflow-hidden flex flex-row relative select-none"
-                  style={{ width: "450px", height: "200px" }}
-                >
-                  {/* LEFT PANEL (22.5mm × 20mm) - FRONT / IDENTIFICATION & BARCODE */}
-                  <div className="w-1/2 h-full p-2.5 flex flex-col justify-between items-stretch text-left border-r border-dashed border-slate-500 relative">
-                    <div className="w-full">
-                      {shopName && (
-                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-900 truncate">
-                          {shopName}
-                        </p>
-                      )}
-                      <p className="text-[11px] font-bold text-slate-900 truncate mt-0.5">
-                        {itemName}
-                      </p>
-                    </div>
-
-                    {/* High contrast barcode graphic */}
-                    <div className="w-full h-16 flex items-center justify-center py-0.5">
-                      {svgHtml ? (
-                        <div
-                          className="w-full h-full flex items-center justify-center"
-                          dangerouslySetInnerHTML={{ __html: svgHtml }}
-                        />
-                      ) : (
-                        <div className="text-[10px] text-muted-foreground animate-pulse">
-                          Rendering {barcodeType}...
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="w-full space-y-0.5 text-[10px]">
-                      <div className="flex justify-between items-baseline">
-                        <span className="font-bold text-slate-700">Purity:</span>
-                        <span className="font-bold text-amber-700 truncate">{purity}</span>
-                      </div>
-                      <div className="flex justify-between items-baseline">
-                        <span className="font-bold text-slate-700">HUID:</span>
-                        <span className="font-mono font-bold text-slate-950 truncate">{huid}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* RIGHT PANEL (22.5mm × 20mm) - BACK / WEIGHTS & CODE */}
-                  <div className="w-1/2 h-full p-2.5 flex flex-col justify-center text-left bg-white relative">
-                    <table className="w-full text-[10px] leading-tight border-collapse">
-                      <tbody>
-                        <tr className="border-b border-slate-100">
-                          <td className="font-bold text-slate-900 w-12 py-1">GW</td>
-                          <td className="text-slate-800 py-1">{gw}</td>
-                        </tr>
-                        <tr className="border-b border-slate-100">
-                          <td className="font-bold text-slate-900 py-1">LW</td>
-                          <td className="text-slate-800 py-1">{lw}</td>
-                        </tr>
-                        <tr className="border-b border-slate-100">
-                          <td className="font-bold text-slate-900 py-1">NW</td>
-                          <td className="font-bold text-slate-950 py-1">{nw}</td>
-                        </tr>
-                        <tr className="border-b border-slate-100">
-                          <td className="font-bold text-slate-900 py-1">Fine</td>
-                          <td className="text-slate-800 py-1">{fine}</td>
-                        </tr>
-                        <tr>
-                          <td className="font-bold text-slate-900 py-1">Code</td>
-                          <td className="font-mono font-bold text-slate-950 py-1">{itemCode}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+            {/* Exact-scale preview rendered from the same HTML that gets printed */}
+            <div className="border-2 border-slate-300 rounded-xl bg-slate-100 p-3 shadow-inner overflow-hidden">
+              <div ref={setPreviewBoxEl} className="w-full">
+              <div style={{ width: previewWidthPx, height: previewHeightPx, margin: "0 auto", overflow: "hidden" }}>
+                <iframe
+                  title="Label preview"
+                  scrolling="no"
+                  srcDoc={previewHtml}
+                  style={{
+                    width: `${totalWidthMm}mm`,
+                    height: `${LABEL_HEIGHT_MM}mm`,
+                    border: "none",
+                    transform: `scale(${previewScale})`,
+                    transformOrigin: "top left",
+                    pointerEvents: "none",
+                  }}
+                />
               </div>
+              </div>
+              {copies > 1 && (
+                <p className="text-[11px] text-muted-foreground text-center mt-2">
+                  {copies} identical labels will be printed
+                </p>
+              )}
             </div>
           </div>
 
@@ -334,7 +293,7 @@ export default function PrintBarcodeDialog({ open, onClose, item, settings }) {
           )}
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="shrink-0 gap-2 sm:gap-0 pt-2 border-t">
           <Button variant="outline" onClick={onClose} disabled={printing || downloading}>
             Close
           </Button>
