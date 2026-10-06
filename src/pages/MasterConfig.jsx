@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { usePagination } from "@/hooks/usePagination";
-import { Pagination } from "@/components/ui/Pagination";
+import { Pagination } from "@/components/ui/pagination";
 import { useBulkSelection } from "@/hooks/useBulkSelection";
 import { BulkActionBar, BulkDeleteResultDialog } from "@/components/ui/BulkActionBar";
 import { Checkbox } from "@/components/ui/checkbox";

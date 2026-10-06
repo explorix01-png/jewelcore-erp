@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Truck, Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { usePagination } from "@/hooks/usePagination";
-import { Pagination } from "@/components/ui/Pagination";
+import { Pagination } from "@/components/ui/pagination";
 import { useBulkSelection } from "@/hooks/useBulkSelection";
 import { BulkActionBar, BulkDeleteResultDialog } from "@/components/ui/BulkActionBar";
 import { Checkbox } from "@/components/ui/checkbox";

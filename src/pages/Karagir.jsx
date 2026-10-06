@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Hammer, Plus, Search, Pencil, ClipboardList, Trash2, Eye } from "lucide-react";
 import KaragirOrdersDialog from "@/components/karagir/KaragirOrdersDialog";
 import { usePagination } from "@/hooks/usePagination";
-import { Pagination } from "@/components/ui/Pagination";
+import { Pagination } from "@/components/ui/pagination";
 import { useBulkSelection } from "@/hooks/useBulkSelection";
 import { BulkActionBar, BulkDeleteResultDialog } from "@/components/ui/BulkActionBar";
 import { Checkbox } from "@/components/ui/checkbox";

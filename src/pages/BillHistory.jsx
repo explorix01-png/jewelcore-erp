@@ -18,7 +18,7 @@ import SetDueReminderDialog from "@/components/billing/SetDueReminderDialog";
 import DeleteBillDialog from "@/components/billing/DeleteBillDialog";
 import WhatsAppButton from "@/components/billing/WhatsAppButton";
 import { usePagination } from "@/hooks/usePagination";
-import { Pagination } from "@/components/ui/Pagination";
+import { Pagination } from "@/components/ui/pagination";
 import { useDebounced } from "@/hooks/useDebounced";
 
 // Badge for bill source type — distinguishes Inventory, Manual, and Customer Purchase bills.

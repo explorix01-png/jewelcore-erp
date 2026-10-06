@@ -13,7 +13,7 @@ import BillViewDialog from "@/components/billing/BillViewDialog";
 import CollectDueDialog from "@/components/billing/CollectDueDialog";
 import { ArrowLeft, Receipt, IndianRupee, ClipboardList, Search, Eye, RefreshCw, ArrowLeftRight, Phone, MapPin, FileText } from "lucide-react";
 import { usePagination } from "@/hooks/usePagination";
-import { Pagination } from "@/components/ui/Pagination";
+import { Pagination } from "@/components/ui/pagination";
 import { useDebounced } from "@/hooks/useDebounced";
 
 export default function CustomerDetail() {
