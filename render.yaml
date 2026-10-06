@@ -18,7 +18,10 @@ services:
     name: jewelcore-erp-staging
     env: node
     plan: starter
-    autoDeploy: false # Prevent accidental automatic deployments; deploy via dashboard or approval
+    branch: main
+    # CI/CD: Render deploys automatically on every push to main, but only after the GitHub
+    # Actions CI workflow (.github/workflows/ci.yml) passes. A failing CI run blocks the deploy.
+    autoDeployTrigger: checksPass
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
