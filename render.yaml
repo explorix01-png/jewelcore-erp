@@ -3,9 +3,9 @@
 # ===============================================================
 # This blueprint defines the isolated staging environment for JewelCore ERP.
 # Features:
-# - Always-on Node.js web service serving backend API and PWA static assets
-# - Canonical Managed PostgreSQL database (persistent, daily backups, non-expiring)
-# - Persistent 10 GB disk for jewellery photos, barcodes, and invoice files
+# - Free-tier Node.js web service serving backend API and PWA static assets (sleeps when idle)
+# - Free managed PostgreSQL database (expires after 30 days; upgrade for persistence)
+# - No persistent disk on the free tier: uploaded files are lost on redeploy
 # - Automated secret generation for JWT
 # - Built-in health check monitoring at /api/health
 # ===============================================================
@@ -17,7 +17,7 @@ services:
   - type: web
     name: jewelcore-erp-staging
     env: node
-    plan: starter
+    plan: free # Free tier: sleeps after 15 min idle (keep awake with UptimeRobot on /api/health)
     branch: main
     # CI/CD: Render deploys automatically on every push to main, but only after the GitHub
     # Actions CI workflow (.github/workflows/ci.yml) passes. A failing CI run blocks the deploy.
@@ -32,22 +32,17 @@ services:
         value: 10000
       - key: JWT_SECRET
         generateValue: true # Render securely generates a random secret on initial deploy
-      - key: UPLOADS_DIR
-        value: /opt/render/project/src/uploads
       - key: DATABASE_URL
         fromDatabase:
           name: jewelcore-db-staging
           property: connectionString
-    disk:
-      name: jewelcore-staging-uploads
-      mountPath: /opt/render/project/src/uploads
-      sizeGB: 10
+    # NOTE: free web services have no persistent disk, so ./uploads is wiped on every deploy/restart.
 
 databases:
   # -------------------------------------------------------------
   # Canonical Managed PostgreSQL Database (Staging)
   # -------------------------------------------------------------
   - name: jewelcore-db-staging
-    plan: starter
+    plan: free # Free Postgres expires 30 days after creation (1 GB); upgrade or recreate before then
     databaseName: jewelcore_erp_staging
     user: jewelcore_admin
