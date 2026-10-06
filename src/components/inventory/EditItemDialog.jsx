@@ -107,7 +107,17 @@ export default function EditItemDialog({ item, onClose, onDone }) {
             <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">{t("inv.sectionItemDetails")}</p>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>{t("common.code")}</Label><Input value={f.item_code} onChange={(e) => set("item_code", e.target.value)} /></div>
+                <div>
+                  <Label>{t("inventory.jewelleryId")}</Label>
+                  <Input
+                    value={f.huid || f.item_code}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setF((s) => ({ ...s, huid: val, item_code: val }));
+                    }}
+                    placeholder="e.g. HUID-12345"
+                  />
+                </div>
                 <div><Label>{t("billing.item")} *</Label><Input value={f.item_name} onChange={(e) => set("item_name", e.target.value)} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">

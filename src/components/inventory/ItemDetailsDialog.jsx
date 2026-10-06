@@ -6,7 +6,7 @@ import { fmtNum, fmtWt3 } from "@/lib/billCalc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import Code128Barcode from "@/components/Code128Barcode";
-import { printBarcodeLabel } from "@/lib/printBarcode";
+import PrintBarcodeDialog from "@/components/inventory/PrintBarcodeDialog";
 import { Printer, Pencil, Barcode as BarcodeIcon, Receipt } from "lucide-react";
 
 // Complete inventory item details: master info, current stock, barcode (printable),
@@ -16,6 +16,7 @@ export default function ItemDetailsDialog({ item, onClose, onEdit, onBarcode, on
   const [txns, setTxns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState(null);
+  const [printOpen, setPrintOpen] = useState(false);
 
   useEffect(() => {
     if (!item) return;
@@ -36,13 +37,9 @@ export default function ItemDetailsDialog({ item, onClose, onEdit, onBarcode, on
             <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">{t("inventory.itemInfo")}</p>
             <div className="grid grid-cols-2 gap-y-1.5 text-sm">
               <InfoRow label={t("billing.item")} value={item.item_name} />
-              {item.huid ? (
-                <>
-                  <InfoRow label={t("inventory.huid")} value={item.huid} mono />
-                  <InfoRow label={t("inventory.internalCode")} value={item.item_code} mono />
-                </>
-              ) : (
-                <InfoRow label={t("common.code")} value={item.item_code} mono />
+              <InfoRow label={t("inventory.jewelleryId")} value={item.huid || item.item_code} mono />
+              {item.huid && item.item_code && item.huid !== item.item_code && (
+                <InfoRow label={t("inventory.internalCode")} value={item.item_code} mono />
               )}
               <InfoRow label={t("billing.metalType")} value={item.metal_type ? t("metal." + item.metal_type) : ""} />
               <InfoRow label={t("billing.category")} value={item.category_name} />
@@ -66,7 +63,7 @@ export default function ItemDetailsDialog({ item, onClose, onEdit, onBarcode, on
               <>
                 <Code128Barcode value={item.barcode} height={Number(settings?.barcode_height) || 70} moduleWidth={Number(settings?.barcode_width) || 2} fontSize={Number(settings?.barcode_font_size) || 14} />
                 <div className="mt-3 flex justify-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => printBarcodeLabel(item, settings)}><Printer className="w-4 h-4 mr-1" /> {t("inventory.printBarcode")}</Button>
+                  <Button size="sm" variant="outline" onClick={() => setPrintOpen(true)}><Printer className="w-4 h-4 mr-1" /> {t("inventory.printBarcode")}</Button>
                   <Button size="sm" variant="outline" onClick={() => onBarcode(item)}><BarcodeIcon className="w-4 h-4 mr-1" /> {t("inventory.viewBarcode")}</Button>
                 </div>
               </>
@@ -100,6 +97,7 @@ export default function ItemDetailsDialog({ item, onClose, onEdit, onBarcode, on
           </div>
         </div>
       </DialogContent>
+      <PrintBarcodeDialog open={printOpen} onClose={() => setPrintOpen(false)} item={item} settings={settings} />
     </Dialog>
   );
 }

@@ -147,23 +147,41 @@ export function computeDue(totalAmount, paidAmount) {
   return round(totalAmount - num(paidAmount));
 }
 
-// Calculate a purity rate from the base rate using purity percentage.
+// Calculate a purity rate from the base rate using purity percentage or karat.
 // purity_rate = base_rate × purity_percentage / 100
-// PurityMaster stores purity_value as a percentage (e.g. 100 for 24K, 96.50 for 23K, 92.50 for 925 silver).
+// PurityMaster may store purity_value as karat (e.g. 24, 22, 18, 14) or percentage (e.g. 99.9, 91.67, 75.00).
 export function calcPurityRate(baseRate, purityPercentage) {
-  return round(num(baseRate) * num(purityPercentage) / 100);
+  const p = num(purityPercentage);
+  const pct = (p > 0 && p <= 24) ? (p / 24) * 100 : p;
+  return round(num(baseRate) * pct / 100);
+}
+
+// Sort purities in descending order starting from 24K for gold.
+// Required order: 24K, 23.5K, 23K, 22K, 21K, 20K, 18K, 17K, 16K, 15K, 14K...
+export function sortPuritiesDescending(purities, metalType = "gold") {
+  return [...purities].sort((a, b) => {
+    if (metalType === "gold") {
+      const aName = (a.display_format || a.name || "").toUpperCase();
+      const bName = (b.display_format || b.name || "").toUpperCase();
+      const aIs24k = aName.startsWith("24K") || aName === "24K";
+      const bIs24k = bName.startsWith("24K") || bName === "24K";
+      if (aIs24k && !bIs24k) return -1;
+      if (!aIs24k && bIs24k) return 1;
+    }
+    return (Number(b.purity_value) || 0) - (Number(a.purity_value) || 0);
+  });
 }
 
 // Calculate all purity rates for a given metal from a single base rate.
 export function calcAllPurityRates(baseRate, purities, metalType) {
-  return purities
-    .filter((p) => p.metal_type === metalType && p.is_active !== false)
-    .map((p) => ({
-      purity_id: p.id,
-      purity_display: p.display_format || p.name,
-      purity_value: p.purity_value,
-      rate_per_gram: calcPurityRate(baseRate, p.purity_value),
-    }));
+  const filtered = purities.filter((p) => p.metal_type === metalType && p.is_active !== false);
+  const sorted = sortPuritiesDescending(filtered, metalType);
+  return sorted.map((p) => ({
+    purity_id: p.id,
+    purity_display: p.display_format || p.name,
+    purity_value: p.purity_value,
+    rate_per_gram: calcPurityRate(baseRate, p.purity_value),
+  }));
 }
 
 // Round to 3 decimal places — used for fine weight precision.

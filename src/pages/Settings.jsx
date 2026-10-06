@@ -64,15 +64,35 @@ export default function Settings() {
   if (loading) return <Spinner />;
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-3xl mx-auto">
-      <PageHeader title={t("settings.title")} subtitle={t("settings.subtitle")}
-        actions={canEdit && <Button onClick={save} disabled={saving || uploading}><Save className="w-4 h-4 mr-1" /> {saving ? t("common.saving") : t("common.save")}</Button>} />
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+      <PageHeader
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-800 border border-amber-500/20">
+            <span>Store Configuration</span>
+          </span>
+        }
+        title={t("settings.title")}
+        subtitle={t("settings.subtitle")}
+        actions={
+          canEdit && (
+            <Button
+              onClick={save}
+              disabled={saving || uploading}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs"
+            >
+              <Save className="w-4 h-4 mr-1.5" />
+              <span>{saving ? t("common.saving") : t("common.save")}</span>
+            </Button>
+          )
+        }
+      />
       {!canEdit && (
-        <div className="flex items-center gap-2 mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-          <Lock className="w-4 h-4" /> {t("settings.readOnly")}
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800 font-medium">
+          <Lock className="w-4 h-4 text-amber-600" />
+          <span>{t("settings.readOnly")}</span>
         </div>
       )}
-      <div className="space-y-5 rounded-xl border bg-card p-5">
+      <div className="space-y-6 rounded-xl border border-border/80 bg-card p-6 shadow-2xs">
         <div className="grid sm:grid-cols-2 gap-4">
           <div><Label>{t("settings.shopName")} *</Label><Input value={s.shop_name || ""} onChange={(e) => set("shop_name", e.target.value)} disabled={!canEdit} /></div>
           <div><Label>{t("settings.ownerName")}</Label><Input value={s.owner_name || ""} onChange={(e) => set("owner_name", e.target.value)} disabled={!canEdit} /></div>

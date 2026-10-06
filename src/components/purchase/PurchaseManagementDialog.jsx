@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
-import { calcBill, calcPurityRate, fmt } from "@/lib/billCalc";
+import { calcBill, calcPurityRate, fmt, fmtNum } from "@/lib/billCalc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Trash2, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, Coins } from "lucide-react";
 import PurchaseItemCard from "@/components/purchase/PurchaseItemCard";
 
 // Purchase Management — supplier purchase document. Does NOT update inventory.
@@ -30,46 +30,87 @@ export default function PurchaseManagementDialog({ open, onClose, onDone, editPu
   const [paymentMode, setPaymentMode] = useState("cash");
   const [paidAmount, setPaidAmount] = useState(0);
 
+  const [goldSettlement, setGoldSettlement] = useState({
+    metal_type: "gold",
+    purity_display: "22K",
+    purity_value: 91.67,
+    gross_weight: "",
+    net_weight: "",
+    rate_per_gram: "",
+    reference: "",
+    description: "",
+    notes: "",
+  });
+
+  const [loadError, setLoadError] = useState(null);
+
   useEffect(() => {
     if (!open) return;
+    setLoadError(null);
     (async () => {
-      const [sups, purs, gst, rt] = await Promise.all([
-        base44.entities.Supplier.list("-created_date", 200),
-        base44.entities.PurityMaster.filter({ is_active: true }),
-        base44.entities.GSTConfig.filter({ is_active: true }, "-created_date", 5),
-        base44.entities.RateHistory.filter({ is_active: true }, "-effective_date", 100),
-      ]);
-      setSuppliers(sups);
-      setPurities(purs);
-      setGstConfigs(gst);
-      setRates(rt);
-      if (editPurchase) {
-        setSupplierId(editPurchase.supplier_id || "");
-        setDate(editPurchase.purchase_date || new Date().toISOString().slice(0, 10));
-        setNotes(editPurchase.notes || "");
-        setGstEnabled(editPurchase.gst_enabled || false);
-        setGstMode(editPurchase.gst_mode || "intra");
-        setOtherCharges(editPurchase.other_charges || 0);
-        setPaymentMode(editPurchase.payment_mode || "cash");
-        setPaidAmount(editPurchase.paid_amount || 0);
-        setRows((editItems || []).map((pi) => ({
-          item_id: pi.item_id || "", item_name: pi.item_name || "", item_code: pi.item_code || "",
-          metal_type: pi.metal_type || "gold", purity_display: pi.purity_display || "",
-          purity_value: pi.purity_value || 0, category_name: pi.category_name || "", hsn: pi.hsn || "",
-          quantity: pi.quantity || 1, gross_weight: pi.gross_weight || 0,
-          stone_weight: pi.stone_weight || 0, net_weight: pi.net_weight || 0,
-          wastage: pi.wastage || 0, rate_per_gram: pi.rate_per_gram || 0,
-          making_charge: pi.making_charge || 0, making_charge_type: "per_gram",
-          _rateAuto: false,
-          _purityMode: pi.purity_display && purs.some((p) => p.metal_type === pi.metal_type && p.display_format === pi.purity_display) ? "master" : "custom",
-          _customPurity: pi.purity_display || "",
-        })));
-      } else {
-        setRows([]);
-        setSupplierId("");
-        setNotes("");
-        setOtherCharges(0);
-        setPaidAmount(0);
+      try {
+        const [sups, purs, gst, rt] = await Promise.all([
+          base44.entities.Supplier.list("-created_date", 200).catch(() => []),
+          base44.entities.PurityMaster.filter({ is_active: true }).catch(() => []),
+          base44.entities.GSTConfig.filter({ is_active: true }, "-created_date", 5).catch(() => []),
+          base44.entities.RateHistory.filter({ is_active: true }, "-effective_date", 100).catch(() => []),
+        ]);
+        const safeSups = Array.isArray(sups) ? sups : [];
+        const safePurs = Array.isArray(purs) ? purs : [];
+        const safeGst = Array.isArray(gst) ? gst : [];
+        const safeRt = Array.isArray(rt) ? rt : [];
+        setSuppliers(safeSups);
+        setPurities(safePurs);
+        setGstConfigs(safeGst);
+        setRates(safeRt);
+        if (editPurchase) {
+          setSupplierId(editPurchase.supplier_id || "");
+          setDate(editPurchase.purchase_date || new Date().toISOString().slice(0, 10));
+          setNotes(editPurchase.notes || "");
+          setGstEnabled(editPurchase.gst_enabled || false);
+          setGstMode(editPurchase.gst_mode || "intra");
+          setOtherCharges(editPurchase.other_charges || 0);
+          setPaymentMode(editPurchase.payment_mode || "cash");
+          setPaidAmount(editPurchase.paid_amount || 0);
+          if (editPurchase.gold_settlement) {
+            try {
+              const gs = typeof editPurchase.gold_settlement === "string" ? JSON.parse(editPurchase.gold_settlement) : editPurchase.gold_settlement;
+              if (gs) setGoldSettlement(gs);
+            } catch (e) {}
+          }
+          setRows((editItems || []).map((pi) => ({
+            item_id: pi.item_id || "", item_name: pi.item_name || "", item_code: pi.item_code || "",
+            metal_type: pi.metal_type || "gold", purity_display: pi.purity_display || "",
+            purity_value: pi.purity_value || 0, category_name: pi.category_name || "", hsn: pi.hsn || "",
+            quantity: pi.quantity || 1, gross_weight: pi.gross_weight || 0,
+            stone_weight: pi.stone_weight || 0, net_weight: pi.net_weight || 0,
+            wastage: pi.wastage || 0, rate_per_gram: pi.rate_per_gram || 0,
+            making_charge: pi.making_charge || 0, making_charge_type: "per_gram",
+            _rateAuto: false,
+            _purityMode: pi.purity_display && safePurs.some((p) => p && p.metal_type === pi.metal_type && p.display_format === pi.purity_display) ? "master" : "custom",
+            _customPurity: pi.purity_display || "",
+          })));
+        } else {
+          setRows([]);
+          setSupplierId("");
+          setNotes("");
+          setOtherCharges(0);
+          setPaidAmount(0);
+          setGoldSettlement({
+            metal_type: "gold",
+            purity_display: "22K",
+            purity_value: 91.67,
+            gross_weight: "",
+            net_weight: "",
+            rate_per_gram: "",
+            reference: "",
+            description: "",
+            notes: "",
+          });
+        }
+      } catch (e) {
+        console.error("Failed to load purchase configuration:", e);
+        setLoadError(e.message || "Failed to load master records");
       }
     })();
   }, [open]);  
@@ -82,6 +123,22 @@ export default function PurchaseManagementDialog({ open, onClose, onDone, editPu
     const r = rates.find((rt) => rt.metal_type === metalType && (!purityDisplay || rt.purity_display === purityDisplay) && rt.is_active);
     return r ? Number(r.rate_per_gram) : 0;
   };
+
+  const settlementFineWeight = useMemo(() => {
+    const net = Number(goldSettlement.net_weight) || 0;
+    const pur = Number(goldSettlement.purity_value) || 0;
+    return Number(((net * pur) / 100).toFixed(3));
+  }, [goldSettlement.net_weight, goldSettlement.purity_value]);
+
+  const effectiveSettlementRate = useMemo(() => {
+    if (Number(goldSettlement.rate_per_gram) > 0) return Number(goldSettlement.rate_per_gram);
+    return rateFor(goldSettlement.metal_type, goldSettlement.purity_display);
+  }, [goldSettlement.rate_per_gram, goldSettlement.metal_type, goldSettlement.purity_display, rates]);
+
+  const settlementValue = useMemo(() => {
+    const net = Number(goldSettlement.net_weight) || 0;
+    return Math.round(net * effectiveSettlementRate);
+  }, [goldSettlement.net_weight, effectiveSettlementRate]);
 
   // Find the base rate (purity_value = 100) for a metal from Rate Management.
   // Used to calculate rates for custom/manual purity values via calcPurityRate.
@@ -260,6 +317,19 @@ export default function PurchaseManagementDialog({ open, onClose, onDone, editPu
         other_charges: Number(otherCharges) || 0,
         update_inventory: false,
         paid_amount: Number(paidAmount) || 0, payment_mode: paymentMode,
+        gold_settlement: (paymentMode.includes("gold") || paymentMode === "mixed" || Number(goldSettlement.net_weight) > 0) ? {
+          metal_type: goldSettlement.metal_type,
+          purity_display: goldSettlement.purity_display,
+          purity_value: Number(goldSettlement.purity_value) || (goldSettlement.metal_type === "gold" ? 91.67 : 92.5),
+          gross_weight: Number(goldSettlement.gross_weight) || 0,
+          net_weight: Number(goldSettlement.net_weight) || 0,
+          fine_weight: settlementFineWeight,
+          rate_per_gram: effectiveSettlementRate,
+          settlement_value: settlementValue,
+          reference: goldSettlement.reference || "",
+          description: goldSettlement.description || "",
+          notes: goldSettlement.notes || "",
+        } : null,
         items: rows.map((r) => ({
           item_id: r.item_id || "", item_name: r.item_name, item_code: r.item_code || "",
           metal_type: r.metal_type, purity_display: r.purity_display, category_name: r.category_name,
@@ -426,21 +496,206 @@ export default function PurchaseManagementDialog({ open, onClose, onDone, editPu
             </div>
             <div className="space-y-2">
               <div>
-                <Label className="text-xs">Payment Mode</Label>
-                <Select value={paymentMode} onValueChange={setPaymentMode}>
+                <Label className="text-xs">Payment / Settlement Mode</Label>
+                <Select
+                  value={paymentMode}
+                  onValueChange={(v) => {
+                    setPaymentMode(v);
+                    if (v === "gold_settlement" && settlementValue > 0) {
+                      setPaidAmount(settlementValue);
+                    }
+                  }}
+                >
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Cash</SelectItem>
                     <SelectItem value="upi">UPI</SelectItem>
                     <SelectItem value="card">Card</SelectItem>
                     <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="credit_due">Credit Due</SelectItem>
+                    <SelectItem value="credit_due">Credit / Due</SelectItem>
+                    <SelectItem value="gold_settlement">Gold / Metal Settlement</SelectItem>
+                    <SelectItem value="old_gold_exchange">Old Gold Exchange</SelectItem>
+                    <SelectItem value="old_gold_cash">Old Gold + Cash</SelectItem>
+                    <SelectItem value="mixed">Mixed</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label className="text-xs">Paid Amount</Label><Input type="number" className="h-8 text-xs" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} /></div>
+              <div>
+                <Label className="text-xs">Paid / Settled Amount</Label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs font-mono font-semibold"
+                  value={paidAmount}
+                  onChange={(e) => setPaidAmount(e.target.value)}
+                />
+              </div>
             </div>
           </div>
+
+          {/* Dedicated Gold / Metal Settlement Section */}
+          {(paymentMode.includes("gold") || paymentMode === "mixed" || Number(goldSettlement.net_weight) > 0) && (
+            <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                  <Coins className="w-3.5 h-3.5 text-amber-600" />
+                  Gold / Metal Settlement Details
+                </span>
+                <span className="text-[10px] text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded font-medium">
+                  Financial Settlement Only · Does not modify inventory stock
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <Label className="text-[11px]">Metal</Label>
+                  <Select
+                    value={goldSettlement.metal_type}
+                    onValueChange={(v) => {
+                      const defaultPur = v === "gold" ? "22K" : "925";
+                      const pObj = purities.find(p => p.metal_type === v && p.display_format === defaultPur);
+                      setGoldSettlement(s => ({
+                        ...s,
+                        metal_type: v,
+                        purity_display: defaultPur,
+                        purity_value: pObj ? Number(pObj.purity_value) : (v === "gold" ? 91.67 : 92.5),
+                        rate_per_gram: "",
+                      }));
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs capitalize"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="gold">Gold</SelectItem>
+                      <SelectItem value="silver">Silver</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-[11px]">Purity</Label>
+                  <Select
+                    value={goldSettlement.purity_display}
+                    onValueChange={(v) => {
+                      const pObj = purities.find(p => p.metal_type === goldSettlement.metal_type && p.display_format === v);
+                      setGoldSettlement(s => ({
+                        ...s,
+                        purity_display: v,
+                        purity_value: pObj ? Number(pObj.purity_value) : s.purity_value,
+                        rate_per_gram: "",
+                      }));
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {purities
+                        .filter(p => p.metal_type === goldSettlement.metal_type)
+                        .map(p => (
+                          <SelectItem key={p.id} value={p.display_format}>{p.display_format}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-[11px]">Gross Weight (g)</Label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    className="h-8 text-xs font-mono"
+                    value={goldSettlement.gross_weight}
+                    onChange={(e) => setGoldSettlement(s => ({ ...s, gross_weight: e.target.value }))}
+                    placeholder="0.000"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-[11px]">Net Weight (g) *</Label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    className="h-8 text-xs font-mono font-semibold"
+                    value={goldSettlement.net_weight}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setGoldSettlement(s => ({ ...s, net_weight: val }));
+                      if (paymentMode === "gold_settlement") {
+                        const net = Number(val) || 0;
+                        const calcVal = Math.round(net * effectiveSettlementRate);
+                        setPaidAmount(calcVal);
+                      }
+                    }}
+                    placeholder="0.000"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-1">
+                <div>
+                  <Label className="text-[11px]">Fine Weight (g)</Label>
+                  <div className="h-8 px-2.5 rounded-md border bg-muted/50 flex items-center font-mono font-bold text-amber-950">
+                    {fmtNum(settlementFineWeight)} g
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-[11px]">Rate / Gram (₹)</Label>
+                  <Input
+                    type="number"
+                    className="h-8 text-xs font-mono"
+                    value={goldSettlement.rate_per_gram || (effectiveSettlementRate ? String(effectiveSettlementRate) : "")}
+                    onChange={(e) => {
+                      const r = e.target.value;
+                      setGoldSettlement(s => ({ ...s, rate_per_gram: r }));
+                      if (paymentMode === "gold_settlement") {
+                        const net = Number(goldSettlement.net_weight) || 0;
+                        setPaidAmount(Math.round(net * (Number(r) || effectiveSettlementRate)));
+                      }
+                    }}
+                    placeholder={`e.g. ${effectiveSettlementRate}`}
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-[11px]">Settlement Value</Label>
+                  <div className="h-8 px-2.5 rounded-md border bg-emerald-50 border-emerald-200 flex items-center justify-between font-mono font-bold text-emerald-800">
+                    <span>{fmt(settlementValue)}</span>
+                    {paymentMode === "gold_settlement" && (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="ghost"
+                        className="h-6 text-[10px] px-1.5 text-emerald-700 hover:text-emerald-900"
+                        onClick={() => setPaidAmount(settlementValue)}
+                      >
+                        Apply
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-[11px]">HUID / Ref / Item</Label>
+                  <Input
+                    type="text"
+                    className="h-8 text-xs"
+                    value={goldSettlement.reference}
+                    onChange={(e) => setGoldSettlement(s => ({ ...s, reference: e.target.value }))}
+                    placeholder="e.g. HUID / 20g Gold Bar"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-[11px]">Settlement Notes / Exchange Description</Label>
+                <Input
+                  type="text"
+                  className="h-8 text-xs"
+                  value={goldSettlement.notes}
+                  onChange={(e) => setGoldSettlement(s => ({ ...s, notes: e.target.value }))}
+                  placeholder="e.g. 20g 22K gold used as settlement in exchange for jewellery received"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Totals */}
           <div className="flex justify-end">

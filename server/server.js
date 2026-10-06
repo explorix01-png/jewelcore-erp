@@ -129,22 +129,9 @@ app.use(async (req, res, next) => {
           onboarding_completed: Boolean(row.onboarding_completed)
         };
       }
-    } catch (e) {
-      // If token is direct ID or email session token
-      try {
-        const userRes = await db.query('SELECT * FROM _auth_users WHERE id = $1 OR email = $2', [token, token]);
-        const row = userRes.rows[0];
-        if (row) {
-          req._user = {
-            id: row.id,
-            email: row.email,
-            full_name: row.full_name,
-            role: row.role,
-            active_shop_role: row.active_shop_role,
-            onboarding_completed: Boolean(row.onboarding_completed)
-          };
-        }
-      } catch (_) {}
+    } catch (_) {
+      // Insecure raw token/email fallback strictly blocked
+      req._user = null;
     }
   }
 
@@ -280,6 +267,18 @@ app.post('/api/auth/verify-otp', rateLimitAuth, async (req, res) => {
   try {
     const { email, otpCode } = req.body;
     const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanCode = String(otpCode || '').trim();
+
+    if (!cleanEmail || !cleanCode) {
+      return res.status(400).json({ error: 'Email and OTP code are required' });
+    }
+
+    const storedOtp = otpMap.get(cleanEmail);
+    if (!storedOtp || storedOtp.otp !== cleanCode || Date.now() > storedOtp.exp) {
+      return res.status(400).json({ error: 'Invalid or expired OTP code' });
+    }
+    otpMap.delete(cleanEmail);
+
     const userRes = await db.query('SELECT * FROM _auth_users WHERE email = $1', [cleanEmail]);
     const userRow = userRes.rows[0];
     if (!userRow) {
@@ -311,6 +310,7 @@ app.post('/api/auth/verify-otp', rateLimitAuth, async (req, res) => {
 
 app.post('/api/auth/resend-otp', rateLimitAuth, (req, res) => {
   const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   otpMap.set(String(email).trim().toLowerCase(), { otp, exp: Date.now() + 10 * 60 * 1000 });
   console.log(`[AUTH] Resent OTP for ${email}: ${otp}`);
@@ -320,6 +320,7 @@ app.post('/api/auth/resend-otp', rateLimitAuth, (req, res) => {
 app.post('/api/auth/reset-password-request', rateLimitAuth, (req, res) => {
   const { email } = req.body;
   const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return res.status(400).json({ error: 'Email required' });
   const resetToken = crypto.randomUUID();
   otpMap.set(resetToken, { email: cleanEmail, exp: Date.now() + 60 * 60 * 1000 });
   console.log(`[AUTH] Password reset requested for ${cleanEmail}. Token: ${resetToken}`);
@@ -328,11 +329,12 @@ app.post('/api/auth/reset-password-request', rateLimitAuth, (req, res) => {
 
 app.post('/api/auth/reset-password', rateLimitAuth, async (req, res) => {
   const { resetToken, newPassword } = req.body;
+  if (!resetToken || !newPassword) return res.status(400).json({ error: 'Reset token and new password are required' });
   const item = otpMap.get(resetToken);
-  if (!item && resetToken !== 'dev') {
+  if (!item || Date.now() > item.exp) {
     return res.status(400).json({ error: 'Invalid or expired reset token' });
   }
-  const email = item ? item.email : null;
+  const email = item.email;
   if (email) {
     const password_hash = bcrypt.hashSync(newPassword, 10);
     await db.query('UPDATE _auth_users SET password_hash = $1, updated_at = $2 WHERE email = $3', [
@@ -511,15 +513,39 @@ app.get('/api/apps/public/prod/public-settings/by-id/:id', (req, res) => {
 // GENERIC ENTITY CRUD ROUTER (Tenant-Isolated Async PostgreSQL)
 // -------------------------------------------------------------
 
-function getScopedService(req) {
-  return req._tenantId ? entityService.forTenant(req._tenantId) : entityService;
+// Entity authentication & multi-tenant isolation middleware
+const requireEntityAuth = (req, res, next) => {
+  if (!req._user) {
+    return res.status(401).json({ error: 'Unauthorized: Authentication required' });
+  }
+  const { entity } = req.params;
+  const isGlobal = entity === 'User' || entity === '_auth_users';
+  if (!isGlobal && !req._tenantId) {
+    return res.status(403).json({ error: 'Forbidden: Active shop/tenant context required for tenant-scoped operations' });
+  }
+  next();
+};
+
+function getScopedService(req, entity) {
+  const isGlobal = entity === 'User' || entity === '_auth_users';
+  if (isGlobal) {
+    return entityService;
+  }
+  if (!req._tenantId) {
+    throw new Error('Active shop/tenant context required');
+  }
+  return entityService.forTenant(req._tenantId);
 }
 
-app.get('/api/entities/:entity', async (req, res) => {
+app.get('/api/entities/:entity', requireEntityAuth, async (req, res) => {
   try {
     const { entity } = req.params;
     const { sort = '-created_date', limit = 100 } = req.query;
-    const svc = getScopedService(req);
+    if (entity === 'User' && req._user.role !== 'admin') {
+      const user = await entityService.get('User', req._user.id);
+      return res.json(user ? [user] : []);
+    }
+    const svc = getScopedService(req, entity);
     const list = await svc.list(entity, sort, Number(limit));
     return res.json(list);
   } catch (error) {
@@ -527,11 +553,15 @@ app.get('/api/entities/:entity', async (req, res) => {
   }
 });
 
-app.post('/api/entities/:entity/filter', async (req, res) => {
+app.post('/api/entities/:entity/filter', requireEntityAuth, async (req, res) => {
   try {
     const { entity } = req.params;
     const { query = {}, sort = '-created_date', limit = 100 } = req.body;
-    const svc = getScopedService(req);
+    if (entity === 'User' && req._user.role !== 'admin') {
+      const user = await entityService.get('User', req._user.id);
+      return res.json(user ? [user] : []);
+    }
+    const svc = getScopedService(req, entity);
     const list = await svc.filter(entity, query, sort, Number(limit));
     return res.json(list);
   } catch (error) {
@@ -539,10 +569,13 @@ app.post('/api/entities/:entity/filter', async (req, res) => {
   }
 });
 
-app.get('/api/entities/:entity/:id', async (req, res) => {
+app.get('/api/entities/:entity/:id', requireEntityAuth, async (req, res) => {
   try {
     const { entity, id } = req.params;
-    const svc = getScopedService(req);
+    if (entity === 'User' && req._user.role !== 'admin' && id !== req._user.id) {
+      return res.status(403).json({ error: 'Forbidden: You can only view your own profile' });
+    }
+    const svc = getScopedService(req, entity);
     const item = await svc.get(entity, id);
     if (!item) return res.status(404).json({ error: `${entity} not found` });
     return res.json(item);
@@ -551,10 +584,14 @@ app.get('/api/entities/:entity/:id', async (req, res) => {
   }
 });
 
-app.post('/api/entities/:entity', async (req, res) => {
+app.post('/api/entities/:entity', requireEntityAuth, async (req, res) => {
   try {
     const { entity } = req.params;
-    const svc = getScopedService(req);
+    const userRole = req._user.active_shop_role || req._user.role;
+    if (['ShopSettings', 'ShopMembership'].includes(entity) && userRole !== 'admin') {
+      return res.status(403).json({ error: `Permission denied: ${userRole} cannot create ${entity}` });
+    }
+    const svc = getScopedService(req, entity);
     const created = await svc.create(entity, req.body);
     return res.json(created);
   } catch (error) {
@@ -562,10 +599,21 @@ app.post('/api/entities/:entity', async (req, res) => {
   }
 });
 
-app.put('/api/entities/:entity/:id', async (req, res) => {
+app.put('/api/entities/:entity/:id', requireEntityAuth, async (req, res) => {
   try {
     const { entity, id } = req.params;
-    const svc = getScopedService(req);
+    const userRole = req._user.active_shop_role || req._user.role;
+    if (entity === 'ShopSettings' && userRole !== 'admin') {
+      return res.status(403).json({ error: 'Permission denied: only administrators can update ShopSettings' });
+    }
+    if (entity === 'ShopMembership' && userRole !== 'admin') {
+      return res.status(403).json({ error: 'Permission denied: only administrators can modify memberships' });
+    }
+    const svc = getScopedService(req, entity);
+    const existing = await svc.get(entity, id);
+    if (!existing) {
+      return res.status(404).json({ error: `${entity} not found` });
+    }
     const updated = await svc.update(entity, id, req.body);
     return res.json(updated);
   } catch (error) {
@@ -573,10 +621,21 @@ app.put('/api/entities/:entity/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/entities/:entity/:id', async (req, res) => {
+app.delete('/api/entities/:entity/:id', requireEntityAuth, async (req, res) => {
   try {
     const { entity, id } = req.params;
-    const svc = getScopedService(req);
+    const userRole = req._user.active_shop_role || req._user.role;
+    if (entity === 'Bill') {
+      return res.status(403).json({ error: 'Direct deletion of bills is prohibited. Use the authorized deleteBill function to preserve inventory and financial audit integrity.' });
+    }
+    if (userRole !== 'admin') {
+      return res.status(403).json({ error: `Permission denied: only administrators can delete ${entity} records` });
+    }
+    const svc = getScopedService(req, entity);
+    const existing = await svc.get(entity, id);
+    if (!existing) {
+      return res.status(404).json({ error: `${entity} not found` });
+    }
     await svc.delete(entity, id);
     return res.json({ success: true, id });
   } catch (error) {
@@ -584,11 +643,11 @@ app.delete('/api/entities/:entity/:id', async (req, res) => {
   }
 });
 
-app.post('/api/entities/:entity/bulk-create', async (req, res) => {
+app.post('/api/entities/:entity/bulk-create', requireEntityAuth, async (req, res) => {
   try {
     const { entity } = req.params;
     const items = Array.isArray(req.body) ? req.body : req.body.items || [];
-    const svc = getScopedService(req);
+    const svc = getScopedService(req, entity);
     const created = await svc.bulkCreate(entity, items);
     return res.json(created);
   } catch (error) {
@@ -596,10 +655,17 @@ app.post('/api/entities/:entity/bulk-create', async (req, res) => {
   }
 });
 
-app.post('/api/entities/:entity/delete-many', async (req, res) => {
+app.post('/api/entities/:entity/delete-many', requireEntityAuth, async (req, res) => {
   try {
     const { entity } = req.params;
-    const svc = getScopedService(req);
+    const userRole = req._user.active_shop_role || req._user.role;
+    if (entity === 'Bill') {
+      return res.status(403).json({ error: 'Direct bulk deletion of bills is prohibited. Use the authorized deleteBill function.' });
+    }
+    if (userRole !== 'admin') {
+      return res.status(403).json({ error: 'Permission denied: only administrators can perform bulk deletions' });
+    }
+    const svc = getScopedService(req, entity);
     await svc.deleteMany(entity, req.body.query || req.body);
     return res.json({ success: true });
   } catch (error) {
@@ -693,9 +759,17 @@ if (fs.existsSync(distDir)) {
 }
 
 // Start listening and initialize schema
-const server = app.listen(PORT, async () => {
+const server = app.listen(PORT, '0.0.0.0', async () => {
   try {
     await initSchema();
+    if (!isProduction) {
+      try {
+        const { seedLocalAdmin } = await import('./db/seedAdmin.js');
+        await seedLocalAdmin();
+      } catch (seedErr) {
+        console.warn('[Seed Admin Warning]', seedErr.message);
+      }
+    }
     console.log(`[JewelCore ERP Server] Running on http://localhost:${PORT}`);
     console.log(`[Database] PostgreSQL ready (${db.getEngine()})`);
   } catch (err) {

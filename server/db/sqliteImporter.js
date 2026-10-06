@@ -111,7 +111,17 @@ export async function importFromSqlite(options = {}) {
 
     for (const row of rows) {
       try {
-        const jsonData = typeof row.data === 'object' ? JSON.stringify(row.data) : row.data;
+        let parsed = typeof row.data === 'object' ? row.data : JSON.parse(row.data);
+        if (table === 'ShopSettings') {
+          parsed.tenant_id = row.id;
+          parsed.onboarding_completed = true;
+        } else if (table === 'ShopMembership') {
+          if (!parsed.tenant_id) parsed.tenant_id = '88661c0f-b46b-478d-862e-77fcec877386';
+          if (!parsed.shop_id) parsed.shop_id = '88661c0f-b46b-478d-862e-77fcec877386';
+        } else if (table !== 'User' && !parsed.tenant_id) {
+          parsed.tenant_id = '88661c0f-b46b-478d-862e-77fcec877386';
+        }
+        const jsonData = JSON.stringify(parsed);
         const conflictClause = overwriteExisting
           ? `ON CONFLICT (id) DO UPDATE SET updated_date = EXCLUDED.updated_date, data = EXCLUDED.data`
           : `ON CONFLICT (id) DO NOTHING`;

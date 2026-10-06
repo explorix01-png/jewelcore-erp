@@ -86,7 +86,7 @@ export default function NewItemDialog({ open, onClose, onDone, metal: lockedMeta
         <DialogHeader><DialogTitle>{t("inv.newItemStock")}</DialogTitle></DialogHeader>
         <div className="space-y-3 py-2">
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>{t("common.code")}</Label><Input value={f.item_code} onChange={(e) => set("item_code", e.target.value)} /></div>
+            <div><Label>{t("inventory.jewelleryId")}</Label><Input value={f.huid || f.item_code} onChange={(e) => { const v = e.target.value; set("huid", v); set("item_code", v); }} placeholder="e.g. ABC123" /></div>
             <div><Label>{t("billing.item")} *</Label><Input value={f.item_name} onChange={(e) => set("item_name", e.target.value)} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -123,9 +123,6 @@ export default function NewItemDialog({ open, onClose, onDone, metal: lockedMeta
             </div>
           </div>
           <div><Label>{t("billing.hsn")}</Label><Input value={f.hsn} onChange={(e) => set("hsn", e.target.value)} /></div>
-          {huidEnabled && (
-            <div><Label>{t("inventory.huid")}</Label><Input value={f.huid} onChange={(e) => set("huid", e.target.value)} placeholder={t("inventory.huidPlaceholder")} /></div>
-          )}
           <div className="grid grid-cols-2 gap-3">
             <div><Label>{t("common.quantity")} *</Label><Input type="number" value={f.quantity} onChange={(e) => set("quantity", e.target.value)} /></div>
             <div><Label>{t("inv.lowStockThreshold")}</Label><Input type="number" value={f.low_stock_threshold} onChange={(e) => set("low_stock_threshold", e.target.value)} placeholder={t("inv.lowStockHint")} /></div>

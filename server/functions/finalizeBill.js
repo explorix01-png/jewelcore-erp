@@ -1,6 +1,6 @@
 import { createClientFromRequest } from '../shared/createClient.js';
 import { authorize, getSettings } from '../shared/tenant.js';
-import { calcBill, computeDue, calcFineWeight } from '../shared/billCalc.js';
+import { calcBill, computeDue, calcFineWeight, sortPuritiesDescending } from '../shared/billCalc.js';
 import { writeAudit } from '../shared/audit.js';
 import { num, str } from '../shared/utils.js';
 import { db } from '../db/database.js';
@@ -62,7 +62,7 @@ export default async function(req) {
     const inventoryMap = new Map();
     if (billSource === 'inventory') {
       for (const it of items) {
-        const invId = str(it.inventory_id);
+        const invId = str(it.inventory_id || it.item_id);
         if (!invId) continue;
         if (!inventoryMap.has(invId)) {
           const inv = await base44.asServiceRole.entities.InventoryItem.get(invId).catch(() => null);
@@ -70,10 +70,12 @@ export default async function(req) {
         }
       }
       for (const it of items) {
-        const inv = inventoryMap.get(str(it.inventory_id));
-        if (!inv) return Response.json({ error: `Inventory not found for ${str(it.item_name)}` }, { status: 400 });
-        if (num(it.quantity) <= 0) return Response.json({ error: `Invalid quantity for ${str(it.item_name)}` }, { status: 400 });
-        if (Number(inv.quantity) < num(it.quantity)) return Response.json({ error: `Insufficient stock for ${str(it.item_name)} (available: ${inv.quantity})` }, { status: 400 });
+        const invId = str(it.inventory_id || it.item_id);
+        const inv = inventoryMap.get(invId);
+        const itemName = str(it.item_name || it.description || 'item');
+        if (!inv) return Response.json({ error: `Inventory not found for ${itemName}` }, { status: 400 });
+        if (num(it.quantity) <= 0) return Response.json({ error: `Invalid quantity for ${itemName}` }, { status: 400 });
+        if (Number(inv.quantity) < num(it.quantity)) return Response.json({ error: `Insufficient stock for ${itemName} (available: ${inv.quantity})` }, { status: 400 });
       }
     } else {
       // manual + customer_purchase: items need name, quantity, net weight
@@ -83,19 +85,108 @@ export default async function(req) {
       }
     }
 
-    // Rates
-    const activeRates = await base44.asServiceRole.entities.RateHistory.filter(
-      { is_active: true }, '-effective_date', 100
-    );
-    const rateSnapshot = activeRates.map((r) => ({ metal: r.metal_type, purity: r.purity_display, rate: r.rate_per_gram }));
+    // Shop settings
+    const settings = await getSettings(base44);
+    if (!settings) return Response.json({ error: 'Shop settings not configured' }, { status: 400 });
 
-    // Purity lookup for fine weight calculation
-    const purities = await base44.asServiceRole.entities.PurityMaster.filter({ is_active: true }, 'purity_value', 100);
+    // Rates — resolve effective rate on or before billDateIso
+    const allHistory = await base44.asServiceRole.entities.RateHistory.list('-effective_date', 5000);
+    const eligibleRates = allHistory.filter((r) => r.effective_date && new Date(r.effective_date).toISOString() <= billDateIso);
+    
+    // Check if date has no valid rate
+    const hasExplicitItemRates = items.length > 0 && items.every(it => num(it.rate_per_gram) > 0);
+    if (eligibleRates.length === 0 && !customRateOverride) {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+      const isTodayOrFuture = new Date(billDateIso).getTime() >= todayStart;
+      if (!isTodayOrFuture) {
+        return Response.json({ error: 'No rate is configured for the selected date.' }, { status: 400 });
+      }
+      if (!settings?.gold_24k_rate && !hasExplicitItemRates) {
+        return Response.json({ error: 'No rate is configured for today.' }, { status: 400 });
+      }
+    }
+    const ratePool = eligibleRates.length > 0 ? eligibleRates : allHistory;
+
+    // Purities lookup for fine weight calculation (sorted descending, 24K first)
+    const puritiesRaw = await base44.asServiceRole.entities.PurityMaster.filter({ is_active: true }, 'purity_value', 100);
+    const purities = sortPuritiesDescending(puritiesRaw, 'gold');
     const purityMap = new Map(purities.map(p => [`${p.metal_type}:${p.display_format}`, p]));
+
+    // Find latest effective base rate for each metal
+    const baseGoldPurity = purities.find(p => p.metal_type === 'gold' && (Number(p.purity_value) >= 99 || Number(p.purity_value) === 24));
+    const latestGold24k = ratePool.find(r => r.metal_type === 'gold' && (
+      (r.purity_display && r.purity_display.toUpperCase().startsWith('24K')) ||
+      (baseGoldPurity && r.purity_id === baseGoldPurity.id)
+    )) || ratePool.find(r => r.metal_type === 'gold');
+
+    const baseSilverPurity = purities.find(p => p.metal_type === 'silver' && Number(p.purity_value) >= 99);
+    const latestSilver999 = ratePool.find(r => r.metal_type === 'silver' && (
+      (r.purity_display && r.purity_display.includes('999')) ||
+      (baseSilverPurity && r.purity_id === baseSilverPurity.id)
+    )) || ratePool.find(r => r.metal_type === 'silver');
+
+    const effectiveGold24k = latestGold24k ? Number(latestGold24k.rate_per_gram) : (Number(settings?.gold_24k_rate) || 0);
+    const effectiveSilver999 = latestSilver999 ? Number(latestSilver999.rate_per_gram) : (Number(settings?.silver_rate) || 0);
+
+    const rateSnapshot = {
+      bill_date: billDateIso,
+      effective_date: latestGold24k?.effective_date || billDateIso,
+      gold_24k_rate: effectiveGold24k,
+      silver_rate: effectiveSilver999,
+      rates: ratePool.slice(0, 30).map((r) => ({ metal: r.metal_type, purity: r.purity_display, rate: r.rate_per_gram })),
+    };
+
+    // Gold Exchange / Gold Given data validation & preparation
+    const rawExchange = body.gold_exchange || (body.use_old_gold ? body.old_gold : null);
+    let goldExchangeData = null;
+    let goldGivenValue = 0;
+
+    if (rawExchange) {
+      const gw = num(rawExchange.gross_weight ?? rawExchange.grossWeight);
+      const lw = num(rawExchange.less_weight ?? rawExchange.deduction_weight ?? rawExchange.deductionWeight);
+      const nw = num(rawExchange.net_weight ?? rawExchange.netWeight) || Math.max(0, gw - lw);
+      const pVal = num(rawExchange.purity_value ?? rawExchange.purityValue);
+      const pDisplay = str(rawExchange.purity || rawExchange.purity_display);
+      let resolvedPurityValue = pVal;
+      if (resolvedPurityValue <= 0 && pDisplay) {
+        const matched = purities.find(p => p.display_format?.toUpperCase() === pDisplay.toUpperCase() || p.name?.toUpperCase() === pDisplay.toUpperCase());
+        if (matched) resolvedPurityValue = Number(matched.purity_value);
+      }
+      const fineWt = calcFineWeight(nw, resolvedPurityValue);
+      const ratePerG = num(rawExchange.rate_per_gram ?? rawExchange.ratePerGram);
+      const val = num(rawExchange.gold_value ?? rawExchange.exchange_value ?? rawExchange.exchangeValue) || Math.round(nw * ratePerG);
+
+      if (gw > 0 && nw > 0) {
+        if (lw < 0 || lw > gw) {
+          return Response.json({ error: 'Gold exchange: Less weight cannot be negative or exceed gross weight' }, { status: 400 });
+        }
+        if (ratePerG <= 0 && val <= 0) {
+          return Response.json({ error: 'Gold exchange: Rate per gram must be greater than zero' }, { status: 400 });
+        }
+        goldGivenValue = val;
+        goldExchangeData = {
+          item_type: str(rawExchange.item_type || rawExchange.item || 'Gold Given'),
+          metal: str(rawExchange.metal || 'gold'),
+          gross_weight: gw,
+          less_weight: lw,
+          net_weight: nw,
+          purity: pDisplay || `${resolvedPurityValue}%`,
+          purity_value: resolvedPurityValue,
+          fine_weight: fineWt,
+          rate_per_gram: ratePerG,
+          gold_value: val,
+          huid: str(rawExchange.huid),
+          barcode: str(rawExchange.barcode),
+          notes: str(rawExchange.notes),
+        };
+      }
+    }
+
     const normalizedItems = items.map((it) => {
       let rate = num(it.rate_per_gram);
       if (rate <= 0) {
-        const r = activeRates.find((x) => x.metal_type === it.metal_type && (!it.purity_display || x.purity_display === it.purity_display));
+        const r = ratePool.find((x) => x.metal_type === it.metal_type && (!it.purity_display || x.purity_display === it.purity_display));
         rate = r ? Number(r.rate_per_gram) : 0;
       }
       const purityKey = `${it.metal_type}:${it.purity_display || ''}`;
@@ -119,12 +210,11 @@ export default async function(req) {
 
     // Authoritative calculation
     const calc = calcBill(normalizedItems, billDiscount, gstConfig, { gst_enabled: gstEnabled, gst_mode: gstMode, other_charges: otherCharges });
-    const due = computeDue(calc.totalAmount, paidAmount);
+    const totalSettled = paidAmount;
+    const due = computeDue(calc.totalAmount, totalSettled);
     if (paidAmount > calc.totalAmount) return Response.json({ error: 'Paid amount exceeds total' }, { status: 400 });
 
     // Bill number — from settings
-    const settings = await getSettings(base44);
-    if (!settings) return Response.json({ error: 'Shop settings not configured' }, { status: 400 });
     const baseSeq = Number(settings.invoice_sequence) || 0;
     let billNumber = '', usedSeq = baseSeq;
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -156,10 +246,17 @@ export default async function(req) {
           aadhaar_number: aadhaarNumber, pan_number: panNumber,
           rate_snapshot: JSON.stringify(rateSnapshot), operation_id: operationId, status: 'finalized', notes,
           public_token: publicToken,
+          gold_exchange: goldExchangeData ? JSON.stringify(goldExchangeData) : null,
+          gold_given_value: goldGivenValue,
+          jewellery_value: calc.subtotal,
         });
 
         const billItems = calc.items.map((c) => ({
-          bill_id: bill.id, item_id: str(c.item_id), item_name: str(c.item_name), item_code: str(c.item_code),
+          bill_id: bill.id,
+          inventory_id: str(c.inventory_id || c.item_id || ''),
+          item_id: str(c.item_id || c.inventory_id || ''),
+          item_name: str(c.item_name),
+          item_code: str(c.item_code),
           huid: str(c.huid || ''),
           category_name: str(c.category_name), metal_type: c.metal_type, purity_display: str(c.purity_display),
           purity_value: num(c.purity_value), fine_weight: calcFineWeight(num(c.net_weight), num(c.purity_value)),
@@ -173,6 +270,26 @@ export default async function(req) {
           gst_amount: num(c.gst_amount), total: c.total,
         }));
         await txBase44.asServiceRole.entities.BillItem.bulkCreate(billItems);
+
+        // Record customer gold exchange transaction if gold was given
+        if (goldExchangeData && goldGivenValue > 0) {
+          const exchangeNum = `EXC-${Date.now().toString().slice(-6)}`;
+          await txBase44.asServiceRole.entities.ExchangeTransaction.create({
+            exchange_number: exchangeNum,
+            transaction_type: 'CUSTOMER_GOLD_EXCHANGE',
+            original_bill_id: bill.id,
+            original_bill_number: billNumber,
+            customer_id: customerId,
+            customer_name: customer.name,
+            old_item_details: JSON.stringify(goldExchangeData),
+            exchange_value: goldGivenValue,
+            difference_amount: due,
+            exchange_date: billDateIso,
+            user_name: user.full_name || user.email || '',
+            operation_id: operationId,
+            notes: `Gold Given / Settlement on bill ${billNumber}: ${goldExchangeData.item_type || 'Gold'} (${goldExchangeData.net_weight}g, ${goldExchangeData.purity})`,
+          });
+        }
 
         if (paidAmount > 0) {
           await txBase44.asServiceRole.entities.Payment.create({

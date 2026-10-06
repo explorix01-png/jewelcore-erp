@@ -1,0 +1,110 @@
+name: JewelCore ERP Staging Deployment
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    name: Build, Containerize & Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: jewelcore_staging_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d jewelcore_staging_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      AWS_REGION: ap-south-1
+      ECR_REPOSITORY: jewelcore-staging-backend
+      ECS_CLUSTER: jewelcore-staging-cluster
+      ECS_SERVICE: jewelcore-staging-service
+      NODE_ENV: test
+      PORT: 3001
+      DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/jewelcore_staging_test?sslmode=disable
+      JWT_SECRET: staging-test-jwt-secret-key-32-chars-min-len
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Code Quality & Security Tests
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run test:postgres
+          npm run test:multitenancy
+          npm run test:backend
+          npm run test:qa
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy to Amazon ECS Fargate (Staging)
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for Staging ECS Service Stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Post-Deployment Smoke Test
+        run: |
+          if [ -n "${{ secrets.STAGING_API_URL }}" ]; then
+            curl --fail --retry 5 --retry-delay 5 "${{ secrets.STAGING_API_URL }}/api/health" || exit 1
+          else
+            echo "STAGING_API_URL secret not defined, skipping live HTTP ping"
+          fi

@@ -18,27 +18,36 @@ export default async function(req) {
     const action = str(body.action);
     const data = body.data || {};
 
-    const safeFields = {
-      shop_name: str(data.shop_name), logo_url: str(data.logo_url), owner_name: str(data.owner_name),
-      address: str(data.address), state: str(data.state), city: str(data.city), pincode: str(data.pincode),
-      mobile: str(data.mobile), email: str(data.email), gst_number: str(data.gst_number),
-      invoice_prefix: str(data.invoice_prefix), currency: str(data.currency),
-      default_language: str(data.default_language), business_type: str(data.business_type),
-      making_charge_default: Number(data.making_charge_default) || 0,
-      making_charge_type_default: str(data.making_charge_type_default) || 'percentage',
-      gst_enabled: data.gst_enabled !== false, gst_threshold_grams: Number(data.gst_threshold_grams) || 0,
-      low_stock_threshold: Number(data.low_stock_threshold) || 2,
-      onboarding_completed: data.onboarding_completed === true,
-      invoice_paper_size: str(data.invoice_paper_size) || 'A4',
-      barcode_preset: str(data.barcode_preset) || 'medium',
-      barcode_type: str(data.barcode_type) || 'code128',
-      barcode_width: Number(data.barcode_width) || 2,
-      barcode_height: Number(data.barcode_height) || 60,
-      barcode_font_size: Number(data.barcode_font_size) || 14,
-      barcode_label_width: Number(data.barcode_label_width) || 20,
-      barcode_label_height: Number(data.barcode_label_height) || 40,
-      huid_enabled: data.huid_enabled === true,
-    };
+    const safeFields = {};
+    if (data.shop_name !== undefined) safeFields.shop_name = str(data.shop_name);
+    if (data.logo_url !== undefined) safeFields.logo_url = str(data.logo_url);
+    if (data.owner_name !== undefined) safeFields.owner_name = str(data.owner_name);
+    if (data.address !== undefined) safeFields.address = str(data.address);
+    if (data.state !== undefined) safeFields.state = str(data.state);
+    if (data.city !== undefined) safeFields.city = str(data.city);
+    if (data.pincode !== undefined) safeFields.pincode = str(data.pincode);
+    if (data.mobile !== undefined) safeFields.mobile = str(data.mobile);
+    if (data.email !== undefined) safeFields.email = str(data.email);
+    if (data.gst_number !== undefined) safeFields.gst_number = str(data.gst_number);
+    if (data.invoice_prefix !== undefined) safeFields.invoice_prefix = str(data.invoice_prefix);
+    if (data.currency !== undefined) safeFields.currency = str(data.currency);
+    if (data.default_language !== undefined) safeFields.default_language = str(data.default_language);
+    if (data.business_type !== undefined) safeFields.business_type = str(data.business_type);
+    if (data.making_charge_default !== undefined) safeFields.making_charge_default = Number(data.making_charge_default) || 0;
+    if (data.making_charge_type_default !== undefined) safeFields.making_charge_type_default = str(data.making_charge_type_default) || 'percentage';
+    if (data.gst_enabled !== undefined) safeFields.gst_enabled = data.gst_enabled !== false;
+    if (data.gst_threshold_grams !== undefined) safeFields.gst_threshold_grams = Number(data.gst_threshold_grams) || 0;
+    if (data.low_stock_threshold !== undefined) safeFields.low_stock_threshold = Number(data.low_stock_threshold) || 2;
+    if (data.onboarding_completed !== undefined) safeFields.onboarding_completed = data.onboarding_completed === true;
+    if (data.invoice_paper_size !== undefined) safeFields.invoice_paper_size = str(data.invoice_paper_size) || 'A4';
+    if (data.barcode_preset !== undefined) safeFields.barcode_preset = str(data.barcode_preset) || 'medium';
+    if (data.barcode_type !== undefined) safeFields.barcode_type = str(data.barcode_type) || 'code128';
+    if (data.barcode_width !== undefined) safeFields.barcode_width = Number(data.barcode_width) || 2;
+    if (data.barcode_height !== undefined) safeFields.barcode_height = Number(data.barcode_height) || 60;
+    if (data.barcode_font_size !== undefined) safeFields.barcode_font_size = Number(data.barcode_font_size) || 14;
+    if (data.barcode_label_width !== undefined) safeFields.barcode_label_width = Number(data.barcode_label_width) || 20;
+    if (data.barcode_label_height !== undefined) safeFields.barcode_label_height = Number(data.barcode_label_height) || 40;
+    if (data.huid_enabled !== undefined) safeFields.huid_enabled = data.huid_enabled === true;
 
     if (action === 'get') {
       const settings = await getSettings(base44);

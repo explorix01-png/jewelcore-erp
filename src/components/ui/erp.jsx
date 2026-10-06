@@ -1,29 +1,52 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 
-export function PageHeader({ title, subtitle, actions }) {
+export function PageHeader({ title, subtitle, actions, badge }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-      <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">{title}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-border/60">
+      <div className="space-y-1">
+        {badge && <div className="mb-1">{badge}</div>}
+        <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          {title}
+        </h1>
+        {subtitle && <p className="text-sm text-muted-foreground leading-relaxed max-w-3xl">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
+      {actions && <div className="flex items-center gap-2 flex-wrap shrink-0">{actions}</div>}
     </div>
   );
 }
 
-export function StatCard({ label, value, sub, icon: Icon, accent }) {
+export function StatCard({ label, value, sub, icon: Icon, accent, trend, trendType = "up", onClick }) {
+  const cardClasses = cn(
+    "relative overflow-hidden rounded-xl border border-border/80 bg-card p-5 shadow-sm transition-all duration-200",
+    onClick && "cursor-pointer hover:border-amber-400/50 hover:shadow-md hover:-translate-y-0.5"
+  );
+
   return (
-    <div className="rounded-xl border bg-card p-5 shadow-sm">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
-          <p className="font-display text-2xl font-semibold mt-1.5">{value}</p>
-          {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+    <div className={cardClasses} onClick={onClick}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1.5 flex-1 min-w-0">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">{label}</p>
+          <p className="font-display text-2xl sm:text-3xl font-bold text-foreground tracking-tight truncate">{value}</p>
+          {(sub || trend) && (
+            <div className="flex items-center gap-2 flex-wrap pt-0.5">
+              {trend && (
+                <span className={cn(
+                  "text-xs font-semibold px-1.5 py-0.5 rounded",
+                  trendType === "up" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                )}>
+                  {trend}
+                </span>
+              )}
+              {sub && <p className="text-xs text-muted-foreground truncate">{sub}</p>}
+            </div>
+          )}
         </div>
         {Icon && (
-          <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", accent || "bg-amber-50 text-amber-700")}>
+          <div className={cn(
+            "w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-xs",
+            accent || "bg-amber-50 text-amber-700 border border-amber-200/50"
+          )}>
             <Icon className="w-5 h-5" />
           </div>
         )}
@@ -34,51 +57,108 @@ export function StatCard({ label, value, sub, icon: Icon, accent }) {
 
 export function EmptyState({ title, description, icon: Icon, action }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
+    <div className="flex flex-col items-center justify-center py-16 px-4 text-center rounded-2xl border border-dashed border-border/80 bg-card/50">
       {Icon && (
-        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-          <Icon className="w-6 h-6 text-muted-foreground" />
+        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 mb-4 shadow-xs">
+          <Icon className="w-7 h-7" />
         </div>
       )}
-      <p className="font-medium text-sm">{title}</p>
-      {description && <p className="text-sm text-muted-foreground mt-1 max-w-sm">{description}</p>}
-      {action && <div className="mt-4">{action}</div>}
+      <h3 className="font-display text-base font-semibold text-foreground tracking-tight">{title}</h3>
+      {description && <p className="text-sm text-muted-foreground mt-1.5 max-w-sm text-center leading-relaxed">{description}</p>}
+      {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }
 
-export function Badge({ children, variant = "default" }) {
+export function Badge({ children, variant = "default", dot = false, className }) {
   const variants = {
-    default: "bg-secondary text-secondary-foreground",
-    success: "bg-emerald-100 text-emerald-700",
-    warning: "bg-amber-100 text-amber-700",
-    danger: "bg-red-100 text-red-700",
-    info: "bg-blue-100 text-blue-700",
+    default: "bg-secondary text-secondary-foreground border-border",
+    success: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    warning: "bg-amber-50 text-amber-700 border-amber-200",
+    danger: "bg-red-50 text-red-700 border-red-200",
+    info: "bg-blue-50 text-blue-700 border-blue-200",
+    gold: "bg-amber-500/15 text-amber-800 border-amber-300/60 font-semibold",
+    purple: "bg-purple-50 text-purple-700 border-purple-200",
   };
-  return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", variants[variant])}>{children}</span>;
+
+  const dotColors = {
+    default: "bg-muted-foreground",
+    success: "bg-emerald-500",
+    warning: "bg-amber-500",
+    danger: "bg-red-500",
+    info: "bg-blue-500",
+    gold: "bg-amber-500",
+    purple: "bg-purple-500",
+  };
+
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border shadow-2xs",
+      variants[variant] || variants.default,
+      className
+    )}>
+      {dot && <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", dotColors[variant] || dotColors.default)} />}
+      {children}
+    </span>
+  );
 }
 
-export function Spinner() {
+export function Spinner({ label = "Loading data..." }) {
   return (
-    <div className="flex items-center justify-center py-16">
-      <div className="w-7 h-7 border-4 border-muted border-t-amber-600 rounded-full animate-spin" />
+    <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
+      <div className="w-8 h-8 border-3 border-amber-200 border-t-amber-600 rounded-full animate-spin" />
+      {label && <p className="text-xs font-medium text-muted-foreground">{label}</p>}
     </div>
   );
 }
 
-export function TableShell({ headers, children }) {
+export function TableShell({ headers, children, className }) {
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
-          <tr>
-            {headers.map((h, i) => (
-              <th key={i} className="text-left font-medium px-4 py-3 whitespace-nowrap">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">{children}</tbody>
-      </table>
+    <div className={cn("overflow-hidden rounded-xl border border-border bg-card shadow-xs", className)}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-muted/50 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border">
+            <tr>
+              {headers.map((h, i) => (
+                <th key={i} className="px-4 py-3.5 whitespace-nowrap font-medium text-foreground/80">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/60">{children}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function SearchFilterToolbar({
+  search,
+  onSearchChange,
+  placeholder = "Search...",
+  filters,
+  actions,
+  className
+}) {
+  return (
+    <div className={cn("flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4", className)}>
+      <div className="flex items-center gap-2 flex-1 max-w-md">
+        {search !== undefined && (
+          <div className="relative w-full">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder={placeholder}
+              className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-input bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        )}
+        {filters}
+      </div>
+      {actions && <div className="flex items-center gap-2 flex-wrap shrink-0">{actions}</div>}
     </div>
   );
 }

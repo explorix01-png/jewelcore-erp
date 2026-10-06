@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useT } from "@/lib/i18n";
 import { usePermission } from "@/lib/permissions";
-import { PageHeader, Spinner, EmptyState, Badge, TableShell, StatCard } from "@/components/ui/erp";
+import { Spinner, EmptyState, Badge, TableShell, StatCard } from "@/components/ui/erp";
 import { fmt } from "@/lib/billCalc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -143,49 +143,149 @@ export default function CustomerDetail() {
   if (!customer) return <div className="p-6"><EmptyState title={t("customerDetail.notFound")} /></div>;
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-      <div className="flex items-center gap-3 mb-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/customers")}><ArrowLeft className="w-4 h-4" /></Button>
-        <PageHeader title={customer.name} subtitle={t("customerDetail.subtitle")} />
-      </div>
-
-      {/* Contextual Actions */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {can("billing", "create") && (
-          <Button onClick={() => navigate("/billing")}><Receipt className="w-4 h-4 mr-1" /> {t("customerDetail.createBill")}</Button>
-        )}
-        {Number(summary.totalDue) > 0 && can("bills", "update") && (
-          <Button variant="outline" onClick={() => {
-            const dueBill = bills.find((b) => Number(b.due_amount) > 0 && b.status === "finalized");
-            if (dueBill) setCollectBill(dueBill);
-          }}><IndianRupee className="w-4 h-4 mr-1" /> {t("customerDetail.collectDue")}</Button>
-        )}
-        {can("orders", "create") && (
-          <Button variant="outline" onClick={() => navigate("/orders")}><ClipboardList className="w-4 h-4 mr-1" /> {t("customerDetail.createOrder")}</Button>
-        )}
-      </div>
-
-      {/* Customer Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="rounded-xl border bg-card p-5 shadow-sm">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">{t("customerDetail.profile")}</p>
-          <div className="space-y-2 text-sm">
-            <p className="font-medium text-base">{customer.name}</p>
-            {customer.mobile && <p className="flex items-center gap-1.5 text-muted-foreground"><Phone className="w-3.5 h-3.5" /> {customer.mobile}</p>}
-            {customer.gst_number && <p className="flex items-center gap-1.5 text-muted-foreground"><FileText className="w-3.5 h-3.5" /> {customer.gst_number}</p>}
-            {customer.address && <p className="flex items-start gap-1.5 text-muted-foreground"><MapPin className="w-3.5 h-3.5 mt-0.5" /> {customer.address}</p>}
-            {customer.city && <p className="text-muted-foreground">{customer.city}, {customer.state} {customer.pincode}</p>}
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Top Breadcrumbs & Navigation */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => navigate("/customers")}
+            className="h-9 w-9 rounded-xl border-border/80 hover:bg-muted"
+            title="Back to Customers Directory"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground font-medium">Customer Profile</span>
+              <span className="text-muted-foreground/40">/</span>
+              <span className="text-xs font-mono text-muted-foreground">{customer.customer_code || "ID-" + customer.id}</span>
+            </div>
+            <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+              {customer.name}
+            </h1>
           </div>
         </div>
-        <StatCard label={t("customerDetail.totalPurchases")} value={fmt(summary.totalAmount)} sub={`${summary.numBills} ${t("customerDetail.bills")}`} icon={Receipt} accent="bg-amber-50 text-amber-700" />
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard label={t("customerDetail.totalPaid")} value={fmt(summary.totalPaid)} icon={IndianRupee} accent="bg-emerald-50 text-emerald-700" />
-          <StatCard label={t("customerDetail.totalOutstanding")} value={fmt(summary.totalDue)} icon={IndianRupee} accent={Number(summary.totalDue) > 0 ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"} />
+
+        {/* Contextual Actions Cluster */}
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
+          {can("billing", "create") && (
+            <Button
+              onClick={() => navigate("/billing")}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs"
+            >
+              <Receipt className="w-4 h-4 mr-1.5" />
+              {t("customerDetail.createBill")}
+            </Button>
+          )}
+          {Number(summary.totalDue) > 0 && can("bills", "update") && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const dueBill = bills.find((b) => Number(b.due_amount) > 0 && b.status === "finalized");
+                if (dueBill) setCollectBill(dueBill);
+              }}
+              className="border-amber-500/40 text-amber-800 bg-amber-50/50 hover:bg-amber-100 font-semibold"
+            >
+              <IndianRupee className="w-4 h-4 mr-1.5 text-amber-600" />
+              {t("customerDetail.collectDue")}
+            </Button>
+          )}
+          {can("orders", "create") && (
+            <Button
+              variant="outline"
+              onClick={() => navigate("/orders")}
+              className="border-border hover:bg-muted"
+            >
+              <ClipboardList className="w-4 h-4 mr-1.5" />
+              {t("customerDetail.createOrder")}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Customer Information & Financial Summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Profile Card */}
+        <div className="rounded-xl border border-border/80 bg-card p-5 shadow-2xs space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-white font-bold text-base flex items-center justify-center shadow-xs">
+              {customer.name ? customer.name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() : "C"}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-display text-base font-bold text-foreground truncate">{customer.name}</h3>
+              <p className="text-xs text-muted-foreground font-mono">{customer.customer_code || "No customer code"}</p>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-border/60 space-y-2.5 text-xs">
+            {customer.mobile && (
+              <div className="flex items-center gap-2 text-foreground">
+                <div className="w-6 h-6 rounded-md bg-muted flex items-center justify-center text-muted-foreground shrink-0">
+                  <Phone className="w-3.5 h-3.5" />
+                </div>
+                <span className="font-mono font-medium">{customer.mobile}</span>
+              </div>
+            )}
+            {customer.gst_number && (
+              <div className="flex items-center gap-2 text-foreground">
+                <div className="w-6 h-6 rounded-md bg-muted flex items-center justify-center text-muted-foreground shrink-0">
+                  <FileText className="w-3.5 h-3.5" />
+                </div>
+                <span className="font-mono text-muted-foreground">GST: {customer.gst_number}</span>
+              </div>
+            )}
+            {(customer.address || customer.city) && (
+              <div className="flex items-start gap-2 text-muted-foreground">
+                <div className="w-6 h-6 rounded-md bg-muted flex items-center justify-center text-muted-foreground shrink-0 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  {customer.address && <p>{customer.address}</p>}
+                  {customer.city && <p>{customer.city}, {customer.state} {customer.pincode}</p>}
+                </div>
+              </div>
+            )}
+            {customer.notes && (
+              <p className="p-2.5 rounded-lg bg-muted/50 border border-border/40 text-muted-foreground italic">
+                "{customer.notes}"
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Financial Stat Cards */}
+        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard
+            label={t("customerDetail.totalPurchases")}
+            value={fmt(summary.totalAmount)}
+            sub={`${summary.numBills} completed invoice(s)`}
+            icon={Receipt}
+            accent="bg-amber-50 text-amber-700 border border-amber-200/60"
+          />
+          <StatCard
+            label={t("customerDetail.totalPaid")}
+            value={fmt(summary.totalPaid)}
+            sub="Settled payments"
+            icon={IndianRupee}
+            accent="bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+          />
+          <StatCard
+            label={t("customerDetail.totalOutstanding")}
+            value={fmt(summary.totalDue)}
+            sub={Number(summary.totalDue) > 0 ? "Pending collection" : "All balances clear"}
+            icon={IndianRupee}
+            accent={Number(summary.totalDue) > 0 ? "bg-red-50 text-red-700 border border-red-200/60" : "bg-emerald-50 text-emerald-700 border border-emerald-200/60"}
+          />
         </div>
       </div>
 
       {summary.lastDate && (
-        <p className="text-xs text-muted-foreground mb-4">{t("customerDetail.lastPurchaseDate")}: {summary.lastDate.toLocaleDateString("en-IN")}</p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span>{t("customerDetail.lastPurchaseDate")}: {summary.lastDate.toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+        </div>
       )}
 
       {/* History Tabs */}

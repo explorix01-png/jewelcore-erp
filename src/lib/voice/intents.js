@@ -68,6 +68,62 @@ function hasAny(text, keys) {
   return keys.some((k) => text.includes(k));
 }
 
+// Entity patterns in English, Hindi, and Marathi:
+// Customer: "find customer Rahul", "ग्राहक राहुल शोधा", "ग्राहक राहुल", "customer Amit"
+// Item: "find item Ring", "आयटम रिंग शोधा", "आइटम रिंग", "item Necklace"
+// Supplier: "find supplier Shree", "सप्लायर श्री शोधा", "supplier Acme"
+// Bill: "bill 12", "bill number 5", "बिल 12", "बिल नंबर 5", "invoice 12"
+
+function extractEntity(text) {
+  // 1. Bill number lookup
+  const billMatch = text.match(/(?:bill|invoice|बिल|इनवॉइस)(?:\s+(?:number|no|नं|नंबर))?\s+(\d+)/i);
+  if (billMatch) {
+    return { kind: "bill_number", billNumber: billMatch[1] };
+  }
+
+  // 2. Customer patterns
+  const custPatterns = [
+    /(?:find|search|open|show)?\s*customer\s+([a-zA-Z0-9\u0900-\u097F\s]+?)(?:\s+(?:bills?|profile|details?))?$/i,
+    /(?:ग्राहक|कस्टमर)\s+([a-zA-Z0-9\u0900-\u097F\s]+?)(?:\s+(?:दाखव|दाखवा|दिखाओ|शोधा|खोजो|चे बिल|का बिल))?$/i,
+    /([a-zA-Z0-9\u0900-\u097F\s]+?)\s+(?:ग्राहक|कस्टमर)(?:\s+(?:चा|चे|का|की))?\s*(?:बिल)?$/i,
+  ];
+  for (const pat of custPatterns) {
+    const m = text.match(pat);
+    if (m && m[1]?.trim() && !m[1].includes("order") && !m[1].includes("count")) {
+      const name = m[1].replace(/^(?:cha|che|ka|ki|of|for)\s+/i, "").trim();
+      if (name.length >= 2) return { kind: "entity", entityType: "customer", name };
+    }
+  }
+
+  // 3. Item patterns
+  const itemPatterns = [
+    /(?:find|search|show)?\s*item\s+([a-zA-Z0-9\u0900-\u097F\s]+)$/i,
+    /(?:आयटम|आइटम|दागिने)\s+([a-zA-Z0-9\u0900-\u097F\s]+?)(?:\s+(?:दाखव|दाखवा|दिखाओ|शोधा|खोजो))?$/i,
+  ];
+  for (const pat of itemPatterns) {
+    const m = text.match(pat);
+    if (m && m[1]?.trim() && !m[1].includes("count")) {
+      const name = m[1].trim();
+      if (name.length >= 2) return { kind: "entity", entityType: "item", name };
+    }
+  }
+
+  // 4. Supplier patterns
+  const supPatterns = [
+    /(?:find|search|show)?\s*supplier\s+([a-zA-Z0-9\u0900-\u097F\s]+)$/i,
+    /(?:सप्लायर)\s+([a-zA-Z0-9\u0900-\u097F\s]+?)(?:\s+(?:दाखव|दाखवा|दिखाओ|शोधा|खोजो))?$/i,
+  ];
+  for (const pat of supPatterns) {
+    const m = text.match(pat);
+    if (m && m[1]?.trim() && !m[1].includes("outstanding") && !m[1].includes("pending")) {
+      const name = m[1].trim();
+      if (name.length >= 2) return { kind: "entity", entityType: "supplier", name };
+    }
+  }
+
+  return null;
+}
+
 // Returns a deterministic intent or null (→ caller falls back to backend LLM).
 export function matchIntent(rawText) {
   const text = normalize(rawText);
@@ -83,7 +139,11 @@ export function matchIntent(rawText) {
     if (hasAny(text, rule.keys)) return { kind: "query", queryType: rule.type };
   }
 
-  // Entity/possessive commands → defer to backend LLM for resolution.
+  // Direct entity extraction (Customer, Item, Supplier, Bill) in English, Hindi, Marathi
+  const entityMatch = extractEntity(text);
+  if (entityMatch) return entityMatch;
+
+  // Entity/possessive commands that require LLM resolution
   if (hasAny(text, ENTITY_MARKERS)) return { kind: "llm" };
 
   // Navigation.

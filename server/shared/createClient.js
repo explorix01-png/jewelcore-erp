@@ -151,11 +151,7 @@ export async function extractDataFromUploadedFile({ file_url, json_schema }) {
 
 export function createClientFromRequest(req, options = {}) {
   const user = req._user || getUserFromRequest(req);
-  const requestedTenantId = options.tenantId ||
-    req._tenantId ||
-    req.headers?.['x-tenant-id'] ||
-    req.headers?.['x-shop-id'] ||
-    null;
+  const requestedTenantId = options.tenantId || req._tenantId || null;
 
   const tenantId = requestedTenantId ? String(requestedTenantId) : null;
   const baseService = options.txClient ? entityService.withTx(options.txClient) : (options.entityService || entityService);
@@ -177,7 +173,15 @@ export function createClientFromRequest(req, options = {}) {
         }
       }
     },
-    withTx: (txClient) => createClientFromRequest(req, { ...options, txClient, tenantId }),
+    bindTenant: (tid) => {
+      if (!tid) return;
+      client.tenantId = String(tid);
+      const newScoped = baseService.forTenant(String(tid));
+      const newEntities = createEntitiesProxy(newScoped);
+      client.entities = newEntities;
+      client.asServiceRole.entities = newEntities;
+    },
+    withTx: (txClient) => createClientFromRequest(req, { ...options, txClient, tenantId: client.tenantId }),
     users: {
       inviteUser: async (email, role) => {
         const id = crypto.randomUUID();

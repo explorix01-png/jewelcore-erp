@@ -21,6 +21,7 @@ export default async function(req) {
     const body = await req.json();
     const rate24k = num(body.gold_24k_rate);
     const silverRate = num(body.silver_rate);
+    const effectiveDate = body.effective_date ? new Date(body.effective_date).toISOString() : new Date().toISOString();
 
     if (rate24k <= 0 && silverRate <= 0)
       return Response.json({ error: 'At least one rate (24K gold or silver) is required' }, { status: 400 });
@@ -52,7 +53,7 @@ export default async function(req) {
         await base44.asServiceRole.entities.RateHistory.create({
           metal_type: 'gold', purity_id: p.id,
           purity_display: p.display_format || p.name, rate_per_gram: rate,
-          effective_date: new Date().toISOString(), source: 'manual',
+          effective_date: effectiveDate, source: 'manual',
           is_manual_override: true, is_active: true,
           notes: `24K=${rate24k}, ${p.purity_value}K=${rate}`,
         });
@@ -82,7 +83,7 @@ export default async function(req) {
         await base44.asServiceRole.entities.RateHistory.create({
           metal_type: 'silver', purity_id: p.id,
           purity_display: p.display_format || p.name, rate_per_gram: rate,
-          effective_date: new Date().toISOString(), source: 'manual',
+          effective_date: effectiveDate, source: 'manual',
           is_manual_override: true, is_active: true,
           notes: `999=${silverRate}, ${p.display_format || p.name}=${rate}`,
         });

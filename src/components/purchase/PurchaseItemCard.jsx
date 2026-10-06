@@ -62,7 +62,7 @@ export default function PurchaseItemCard({ row, index, calc, purities, updateRow
             <Select value={row.purity_display} onValueChange={(v) => updateRow(index, "purity_display", v)}>
               <SelectTrigger className="h-8 text-xs px-1"><SelectValue placeholder="—" /></SelectTrigger>
               <SelectContent>
-                {purities.filter((p) => p.metal_type === row.metal_type).map((p) => <SelectItem key={p.id} value={p.display_format}>{p.display_format}</SelectItem>)}
+                {(purities || []).filter((p) => p && p.metal_type === row.metal_type).map((p) => <SelectItem key={p.id} value={p.display_format}>{p.display_format}</SelectItem>)}
                 <SelectItem value="__custom__">✏️ Custom…</SelectItem>
               </SelectContent>
             </Select>

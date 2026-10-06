@@ -4,7 +4,7 @@
 export const ROLE_ACTIONS = {
   admin: [
     "finalizeBill", "finalizePurchase", "collectDue",
-    "cancelBill",
+    "cancelBill", "deleteBill",
     "processReturn", "processExchange", "adjustStock",
     "changeRate", "restoreRecord",
     "reconcileTransactions",

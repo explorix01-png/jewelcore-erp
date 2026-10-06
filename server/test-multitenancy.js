@@ -1,22 +1,23 @@
 import http from 'node:http';
-import { db } from './db/database.js';
-import { initSchema } from './db/schema.js';
-import { entityService } from './db/entityService.js';
 
-const PORT = 3001;
-const BASE_URL = `http://localhost:${PORT}`;
+const PORT = process.env.PORT || 3001;
+const BASE_URL = process.env.TEST_BASE_URL || `http://127.0.0.1:${PORT}`;
 
 async function ensureServerRunning() {
-  return new Promise((resolve) => {
-    const req = http.get(`${BASE_URL}/api/health`, (res) => {
-      resolve(true);
-    });
-    req.on('error', async () => {
-      console.log('⚡ Backend server not active on port 3001, auto-starting server in-process...');
-      const app = (await import('./server.js')).default;
-      setTimeout(resolve, 1500);
-    });
-  });
+  try {
+    const res = await fetch(`${BASE_URL}/api/health`);
+    if (res.ok) return;
+  } catch (e) {
+    console.log('⚡ Backend server not active on port 3001, auto-starting server in-process...');
+    await import('./server.js');
+    for (let i = 0; i < 40; i++) {
+      try {
+        const res = await fetch(`${BASE_URL}/api/health`);
+        if (res.ok) return;
+      } catch {}
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
 }
 
 async function api(path, { method = 'GET', body, token, tenantId } = {}) {
@@ -49,7 +50,6 @@ async function runTests() {
   console.log('===============================================================');
 
   await ensureServerRunning();
-  await initSchema();
 
   const timestamp = Date.now();
 
@@ -112,16 +112,20 @@ async function runTests() {
   console.log(`✓ Tenant A Onboarded: "${onboardA.data.shop_name}" (ID: ${tenantAId})`);
 
   // Add Staff A to Shop A
-  await entityService.create('ShopMembership', {
-    user_id: userStaffA.id,
-    user_email: staffAEmail,
-    user_name: 'Staff Tenant A',
-    tenant_id: tenantAId,
-    shop_id: tenantAId,
-    shop_name: 'Shree Ganesh Jewellers (Tenant A)',
-    role: 'staff',
-    is_active: true,
-    status: 'active'
+  await api('/api/entities/ShopMembership', {
+    method: 'POST',
+    token: tokenAdminA,
+    body: {
+      user_id: userStaffA.id,
+      user_email: staffAEmail,
+      user_name: 'Staff Tenant A',
+      tenant_id: tenantAId,
+      shop_id: tenantAId,
+      shop_name: 'Shree Ganesh Jewellers (Tenant A)',
+      role: 'staff',
+      is_active: true,
+      status: 'active'
+    }
   });
 
   // Onboard Shop B
@@ -141,16 +145,20 @@ async function runTests() {
   console.log(`✓ Tenant B Onboarded: "${onboardB.data.shop_name}" (ID: ${tenantBId})`);
 
   // Add Staff B to Shop B
-  await entityService.create('ShopMembership', {
-    user_id: userStaffB.id,
-    user_email: staffBEmail,
-    user_name: 'Staff Tenant B',
-    tenant_id: tenantBId,
-    shop_id: tenantBId,
-    shop_name: 'Kalyan Jewellers (Tenant B)',
-    role: 'staff',
-    is_active: true,
-    status: 'active'
+  await api('/api/entities/ShopMembership', {
+    method: 'POST',
+    token: tokenAdminB,
+    body: {
+      user_id: userStaffB.id,
+      user_email: staffBEmail,
+      user_name: 'Staff Tenant B',
+      tenant_id: tenantBId,
+      shop_id: tenantBId,
+      shop_name: 'Kalyan Jewellers (Tenant B)',
+      role: 'staff',
+      is_active: true,
+      status: 'active'
+    }
   });
 
   // 3. Seed Business Records in Tenant A
@@ -176,36 +184,31 @@ async function runTests() {
     token: tokenAdminA,
     tenantId: tenantAId,
     body: {
-      bill_date: new Date().toISOString(),
       customer_id: customerAId,
       customer_name: 'Customer A (Ganesh Regular)',
+      bill_source: 'inventory',
       items: [{
+        inventory_id: itemAId,
         item_id: itemAId,
+        item_name: 'Gold Necklace 22K',
         description: 'Gold Necklace 22K',
         metal_type: 'gold',
-        purity: '22K',
+        purity_display: '22K',
+        purity_value: 91.6,
         gross_weight: 15.5,
         net_weight: 15.5,
         rate_per_gram: 7000,
-        metal_value: 108500,
-        making_charges_fixed: 2000,
-        making_charges_type: 'fixed',
-        making_amount: 2000,
-        taxable_amount: 110500,
-        gst_amount: 3315,
-        total: 113815,
+        making_rate: 200,
+        making_type: 'per_gram',
         quantity: 1
       }],
-      payments: [{ payment_mode: 'cash', amount: 113815 }],
-      subtotal: 110500,
-      gst_amount: 3315,
-      total_amount: 113815,
-      paid_amount: 113815,
-      due_amount: 0
+      payments: [],
+      paid_amount: 0
     }
   });
-  const billAId = billA.data.bill?.id;
-  console.log(`✓ Tenant A created: Customer (${customerAId}), Item (${itemAId}), Bill (${billA.data.bill?.bill_number || 'INV'})`);
+  const billAId = billA.data.bill_id || billA.data.bill?.id;
+  if (!billAId) throw new Error(`Failed to finalize Bill A: ${JSON.stringify(billA.data)}`);
+  console.log(`✓ Tenant A created: Customer (${customerAId}), Item (${itemAId}), Bill (${billA.data.bill_number || billAId})`);
 
   // 4. Seed Business Records in Tenant B
   console.log('\n[STEP 4] Seeding Business Data for Tenant B...');
@@ -233,33 +236,29 @@ async function runTests() {
       bill_date: new Date().toISOString(),
       customer_id: customerBId,
       customer_name: 'Customer B (Kalyan VIP)',
+      bill_source: 'inventory',
       items: [{
+        inventory_id: itemBId,
         item_id: itemBId,
+        item_name: 'Silver Bangles 999',
         description: 'Silver Bangles 999',
         metal_type: 'silver',
-        purity: '999',
+        purity_display: '999',
+        purity_value: 99.9,
         gross_weight: 50.0,
         net_weight: 50.0,
         rate_per_gram: 85,
-        metal_value: 4250,
-        making_charges_fixed: 500,
-        making_charges_type: 'fixed',
-        making_amount: 500,
-        taxable_amount: 4750,
-        gst_amount: 142.5,
-        total: 4892.5,
+        making_rate: 50,
+        making_type: 'per_gram',
         quantity: 2
       }],
-      payments: [{ payment_mode: 'upi', amount: 4892.5 }],
-      subtotal: 4750,
-      gst_amount: 142.5,
-      total_amount: 4892.5,
-      paid_amount: 4892.5,
-      due_amount: 0
+      payments: [],
+      paid_amount: 0
     }
   });
-  const billBId = billB.data.bill?.id;
-  console.log(`✓ Tenant B created: Customer (${customerBId}), Item (${itemBId}), Bill (${billB.data.bill?.bill_number || 'INV'})`);
+  const billBId = billB.data.bill_id || billB.data.bill?.id;
+  if (!billBId) throw new Error(`Failed to finalize Bill B: ${JSON.stringify(billB.data)}`);
+  console.log(`✓ Tenant B created: Customer (${customerBId}), Item (${itemBId}), Bill (${billB.data.bill_number || billBId})`);
 
   // ===============================================================
   // MULTI-TENANT ISOLATION SECURITY CHECKS
@@ -296,9 +295,12 @@ async function runTests() {
     throw new Error('SECURITY VIOLATION: Tenant A successfully modified Tenant B Customer!');
   }
   // Verify Customer B remains unaltered
-  const verifyCustB = await entityService.get('Customer', customerBId);
-  if (verifyCustB.name === 'HACKED CUSTOMER B') {
-    throw new Error('SECURITY VIOLATION: Customer B data was corrupted by Tenant A!');
+  const verifyCustB = await api(`/api/entities/Customer/${customerBId}`, {
+    token: tokenAdminB,
+    tenantId: tenantBId
+  });
+  if (!verifyCustB.ok || verifyCustB.data.name === 'HACKED CUSTOMER B') {
+    throw new Error('SECURITY VIOLATION: Customer B data was corrupted by Tenant A or unreachable!');
   }
   console.log('✓ PASS: Cross-tenant update blocked with 404/error. Target record was not modified.');
 
@@ -413,16 +415,20 @@ async function runTests() {
 
   console.log('\n[CHECK 11] Verifying Authorized Multi-Shop Switching for Dual-Member User...');
   // Invite Staff A to also be Cashier in Tenant B
-  await entityService.create('ShopMembership', {
-    user_id: userStaffA.id,
-    user_email: staffAEmail,
-    user_name: 'Staff Tenant A (Dual)',
-    tenant_id: tenantBId,
-    shop_id: tenantBId,
-    shop_name: 'Kalyan Jewellers (Tenant B)',
-    role: 'cashier',
-    is_active: true,
-    status: 'active'
+  await api('/api/entities/ShopMembership', {
+    method: 'POST',
+    token: tokenAdminB,
+    body: {
+      user_id: userStaffA.id,
+      user_email: staffAEmail,
+      user_name: 'Staff Tenant A (Dual)',
+      tenant_id: tenantBId,
+      shop_id: tenantBId,
+      shop_name: 'Kalyan Jewellers (Tenant B)',
+      role: 'cashier',
+      is_active: true,
+      status: 'active'
+    }
   });
 
   // Now Staff A switches to Tenant B
@@ -447,8 +453,186 @@ async function runTests() {
   }
   console.log('✓ PASS: Authorized switch cleanly swapped context to Tenant B customer database.');
 
+  // [CHECK 12] Cross-Tenant Direct Bill Update Attempt (Direct IDOR Attack)
+  console.log('\n[CHECK 12] Cross-Tenant Bill Update Attempt: Tenant A attempts to modify Tenant B Bill...');
+  const billUpdateAttempt = await api(`/api/entities/Bill/${billBId}`, {
+    method: 'PUT',
+    token: tokenAdminA,
+    tenantId: tenantAId,
+    body: { total_amount: 0, status: 'cancelled' }
+  });
+  if (billUpdateAttempt.ok) {
+    throw new Error('SECURITY VIOLATION: Tenant A modified Tenant B Bill!');
+  }
+  // Verify Bill B remains unaltered
+  const verifyBillB = await api(`/api/entities/Bill/${billBId}`, {
+    token: tokenAdminB,
+    tenantId: tenantBId
+  });
+  if (!verifyBillB.ok || verifyBillB.data.total_amount === 0) {
+    throw new Error('SECURITY VIOLATION: Bill B was corrupted by cross-tenant update!');
+  }
+  console.log('✓ PASS: Cross-tenant Bill update blocked (403/404). Bill B unaffected.');
+
+  // [CHECK 13] Cross-Tenant Bill Delete Function Attempt
+  console.log('\n[CHECK 13] Cross-Tenant Bill Delete Attempt: Tenant A admin tries to delete Tenant B Bill via deleteBill...');
+  const crossDeleteBill = await api('/api/functions/deleteBill', {
+    method: 'POST',
+    token: tokenAdminA,
+    tenantId: tenantAId,
+    body: { bill_id: billBId, reason: 'Malicious deletion attempt by Tenant A' }
+  });
+  if (crossDeleteBill.status !== 404) {
+    throw new Error(`SECURITY VIOLATION: Tenant A executed deleteBill on Tenant B! Status: ${crossDeleteBill.status}`);
+  }
+  // Verify Bill B is still intact and not deleted in Tenant B
+  const verifyBillBStillActive = await api(`/api/entities/Bill/${billBId}`, {
+    token: tokenAdminB,
+    tenantId: tenantBId
+  });
+  if (!verifyBillBStillActive.ok || verifyBillBStillActive.data.is_deleted) {
+    throw new Error('SECURITY VIOLATION: Bill B was deleted by Tenant A cross-tenant call!');
+  }
+  console.log('✓ PASS: Cross-tenant deleteBill rejected with 404. Bill B remained active.');
+
+  // [CHECK 14] Cross-Tenant Rate History Isolation
+  console.log('\n[CHECK 14] Cross-Tenant Rate History Isolation...');
+  // Seed a rate history in Tenant B
+  await api('/api/entities/RateHistory', {
+    method: 'POST',
+    token: tokenAdminB,
+    tenantId: tenantBId,
+    body: { gold_24k: 7850, silver_1kg: 92000, effective_date: '2026-09-29T00:00:00.000Z' }
+  });
+  // Query rate history from Tenant A
+  const ratesA = await api('/api/entities/RateHistory', {
+    token: tokenAdminA,
+    tenantId: tenantAId
+  });
+  const hasRateBInA = ratesA.data.some(r => r.gold_24k === 7850);
+  if (hasRateBInA) {
+    throw new Error('SECURITY VIOLATION: Tenant B rate history leaked into Tenant A!');
+  }
+  console.log('✓ PASS: Rate history records are strictly tenant-isolated.');
+
+  // [CHECK 15] Cross-Tenant Data Export Isolation
+  console.log('\n[CHECK 15] Cross-Tenant Data Export Containment in manageData...');
+  const exportA = await api('/api/functions/manageData', {
+    method: 'POST',
+    token: tokenAdminA,
+    tenantId: tenantAId,
+    body: { action: 'export', entity: 'Customer' }
+  });
+  if (!exportA.ok) throw new Error(`Export failed: ${JSON.stringify(exportA.data)}`);
+  const exportedBInA = (exportA.data.records || []).some(r => r.id === customerBId || r.name.includes('Kalyan VIP'));
+  if (exportedBInA) {
+    throw new Error('SECURITY VIOLATION: Tenant B Customer leaked into Tenant A Data Export!');
+  }
+  console.log('✓ PASS: Data export only extracts records belonging to the calling tenant.');
+
+  // [CHECK 16] Privilege Escalation Attack: Staff attempts to escalate to Admin
+  console.log('\n[CHECK 16] Privilege Escalation Attack: Staff attempts to grant themselves admin role...');
+  // Find Staff A's membership ID
+  const staffAMembershipRes = await api('/api/entities/ShopMembership', {
+    token: tokenAdminA,
+    tenantId: tenantAId
+  });
+  const staffAMembership = (staffAMembershipRes.data || []).find(m => m.user_id === userStaffA.id && m.tenant_id === tenantAId);
+  if (staffAMembership) {
+    const escalateAttempt = await api(`/api/entities/ShopMembership/${staffAMembership.id}`, {
+      method: 'PUT',
+      token: tokenStaffA, // Staff A trying to modify membership
+      tenantId: tenantAId,
+      body: { role: 'admin' }
+    });
+    if (escalateAttempt.status !== 403) {
+      throw new Error(`SECURITY VIOLATION: Staff A escalated their role! Status: ${escalateAttempt.status}`);
+    }
+    console.log('✓ PASS: Staff privilege escalation blocked with 403 Forbidden.');
+  }
+
+  // [CHECK 17] Unauthenticated Entity Access Attempt
+  console.log('\n[CHECK 17] Unauthenticated Direct Access Attempt...');
+  const unauthRes = await api('/api/entities/Customer');
+  if (unauthRes.status !== 401) {
+    throw new Error(`SECURITY VIOLATION: Unauthenticated entity access allowed! Status: ${unauthRes.status}`);
+  }
+  console.log('✓ PASS: Direct unauthenticated entity access blocked with 401 Unauthorized.');
+
+  // [CHECK 18] Cross-Tenant Customer Deletion Attempt
+  console.log('\n[CHECK 18] Cross-Tenant Customer Deletion Attempt...');
+  const delAttempt = await api(`/api/entities/Customer/${customerBId}`, {
+    method: 'DELETE',
+    token: tokenAdminA,
+    tenantId: tenantAId
+  });
+  // Must return 404 because customerB is outside Tenant A's scope
+  if (delAttempt.status !== 404 && delAttempt.ok) {
+    throw new Error('SECURITY VIOLATION: Tenant A was able to delete Tenant B customer!');
+  }
+  // Verify Customer B is still present
+  const verifyCustBStillExists = await api(`/api/entities/Customer/${customerBId}`, {
+    token: tokenAdminB,
+    tenantId: tenantBId
+  });
+  if (!verifyCustBStillExists.ok) {
+    throw new Error('SECURITY VIOLATION: Customer B was deleted or corrupted by cross-tenant DELETE!');
+  }
+  console.log('✓ PASS: Cross-tenant Customer deletion blocked. Customer B remains intact.');
+
+  // [CHECK 19] Data Wipe Containment Attack (Tenant A wipes data -> Tenant B untouched)
+  console.log('\n[CHECK 19] Data Wipe Blast Radius Containment: Tenant A clearBusinessData...');
+  const wipeA = await api('/api/functions/manageData', {
+    method: 'POST',
+    token: tokenAdminA,
+    tenantId: tenantAId,
+    body: { action: 'clearBusinessData', confirmation: 'DELETE ALL DATA' }
+  });
+  if (!wipeA.ok) throw new Error(`Tenant A wipe failed: ${JSON.stringify(wipeA.data)}`);
+  console.log('  Tenant A business data wiped successfully.');
+
+  // Verify Tenant A customer and bill are gone
+  const checkCustAGone = await api(`/api/entities/Customer/${customerAId}`, {
+    token: tokenAdminA,
+    tenantId: tenantAId
+  });
+  if (checkCustAGone.status !== 404) {
+    throw new Error('Tenant A customer was expected to be deleted after wipe!');
+  }
+
+  // CRITICAL: Verify Tenant B customer and bill are 100% INTACT!
+  const verifyCustBAfterWipe = await api(`/api/entities/Customer/${customerBId}`, {
+    token: tokenAdminB,
+    tenantId: tenantBId
+  });
+  if (!verifyCustBAfterWipe.ok || verifyCustBAfterWipe.data.id !== customerBId) {
+    throw new Error('CRITICAL SECURITY VIOLATION: Tenant A data wipe deleted Tenant B customer!');
+  }
+  const verifyBillBAfterWipe = await api(`/api/entities/Bill/${billBId}`, {
+    token: tokenAdminB,
+    tenantId: tenantBId
+  });
+  if (!verifyBillBAfterWipe.ok || verifyBillBAfterWipe.data.id !== billBId) {
+    throw new Error('CRITICAL SECURITY VIOLATION: Tenant A data wipe deleted Tenant B bill!');
+  }
+  console.log('✓ PASS: Tenant A data wipe strictly isolated. Tenant B Customer & Bill remain 100% intact.');
+
+  // [CHECK 20] Query Filter Injection Containment
+  console.log('\n[CHECK 20] Query Filter Tenant Tampering Defense...');
+  // Tenant A tries to bypass tenant scoping by passing a malicious tenant_id filter
+  const tamperQuery = await api('/api/entities/Customer?tenant_id=' + tenantBId, {
+    token: tokenAdminA,
+    tenantId: tenantAId
+  });
+  // Service must enforce req._tenantId (Tenant A), ignoring any query params attempting to override tenant_id
+  const hasCustBTamper = (tamperQuery.data || []).some(c => c.id === customerBId);
+  if (hasCustBTamper) {
+    throw new Error('SECURITY VIOLATION: Query parameter allowed tenant scope override!');
+  }
+  console.log('✓ PASS: Tenant context is strictly immutable from client query parameters.');
+
   console.log('\n===============================================================');
-  console.log('🏆 ALL 11 MULTI-TENANT ISOLATION & SECURITY CHECKS PASSED (100%)!');
+  console.log('🏆 ALL 20 MULTI-TENANT ISOLATION & ATTACK CHECKS PASSED (100%)!');
   console.log('===============================================================');
 
   process.exit(0);

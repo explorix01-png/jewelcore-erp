@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.local
+.env.*.local
+dist
+server/data/pglite_db
+server/data/base44_export
+uploads/*
+!uploads/.gitkeep
+docs
+.vscode
+.agents
+terraform

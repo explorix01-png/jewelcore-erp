@@ -33,10 +33,23 @@ base44/.app.jsonc
 
 # Local Database & Cache (avoid tracking binary clusters and lock files)
 server/data/pgdata/
+server/data/pglite_db/
+server/data/backups/
+server/data/test_fresh_pgdata/
+server/data/pgdata_backup_wal/
 server/data/*.db
+server/data/*.sqlite
 server/data/base44_export/
 !server/data/.gitkeep
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfplan
+terraform/.terraform.lock.hcl
 
 # Local Uploads
 uploads/*
 !uploads/.gitkeep
+

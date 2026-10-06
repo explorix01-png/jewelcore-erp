@@ -1,19 +1,29 @@
+import { sanitizeInternalPath, isAuthRoute, buildLoginUrl, DEFAULT_AUTH_LANDING } from '@/lib/authReturnTo';
+
 // JewelCore ERP Self-Hosted API Client
 // Independent REST client connecting directly to the local/self-hosted Express server.
 
 const getToken = () => {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem('token') || localStorage.getItem('base44_access_token') || null;
+  const t = localStorage.getItem('token') || localStorage.getItem('base44_access_token') || null;
+  // Guard against corrupted or oversized storage values
+  if (t && (typeof t !== 'string' || t.length > 2048 || t === 'null' || t === 'undefined')) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('base44_access_token');
+    return null;
+  }
+  return t;
 };
 
 const setToken = (token) => {
   if (typeof window === 'undefined') return;
-  if (token) {
+  if (token && typeof token === 'string' && token !== 'null' && token !== 'undefined') {
     localStorage.setItem('token', token);
     localStorage.setItem('base44_access_token', token);
   } else {
     localStorage.removeItem('token');
     localStorage.removeItem('base44_access_token');
+    localStorage.removeItem('jewelcore_access_token');
   }
 };
 
@@ -34,6 +44,16 @@ const setActiveShopId = (shopId) => {
 };
 
 const request = async (url, options = {}) => {
+  const method = (options.method || 'GET').toUpperCase();
+  // Financial Safety Lock: Reject mutating requests when offline to prevent duplicate transactions and data corruption
+  if (typeof navigator !== 'undefined' && !navigator.onLine && method !== 'GET') {
+    const err = new Error('Financial Safety Lock Active: Cannot execute transaction while offline. Live database connection required to prevent duplicate invoices.');
+    err.status = 503;
+    err.isOffline = true;
+    err.response = { status: 503, data: { error: err.message, financial_safety_lock: true } };
+    throw err;
+  }
+
   const token = getToken();
   const activeShopId = getActiveShopId();
   const headers = {
@@ -73,7 +93,15 @@ export const client = {
     me: async () => {
       const token = getToken();
       if (!token) throw { status: 401, message: 'Unauthenticated' };
-      return request('/api/auth/me');
+      try {
+        return await request('/api/auth/me');
+      } catch (err) {
+        // Stale or invalid token: clean it up immediately to stop repeated 401 calls
+        if (err.status === 401 || err.status === 403) {
+          setToken(null);
+        }
+        throw err;
+      }
     },
 
     register: async ({ email, password, full_name, role, active_shop_role }) => {
@@ -126,20 +154,31 @@ export const client = {
       return data.user;
     },
 
-    loginWithProvider: (provider, returnTo = '/') => {
-      window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`;
+    loginWithProvider: (provider, returnTo = DEFAULT_AUTH_LANDING) => {
+      const dest = buildLoginUrl(returnTo);
+      window.location.href = dest;
     },
 
-    logout: (redirectUrl) => {
+    logout: (redirectUrl = '/login') => {
       setToken(null);
       setActiveShopId(null);
-      if (redirectUrl) {
-        window.location.href = redirectUrl;
+      if (typeof window !== 'undefined') {
+        const safe = sanitizeInternalPath(redirectUrl, '/login');
+        window.location.href = isAuthRoute(safe) ? '/login' : safe;
       }
     },
 
     redirectToLogin: (returnTo) => {
-      const dest = returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : '/login';
+      if (typeof window === 'undefined') return;
+      // Rule 1: The login page must NEVER redirect to itself
+      if (isAuthRoute(window.location.pathname)) {
+        return;
+      }
+      const dest = buildLoginUrl(returnTo);
+      const current = window.location.pathname + window.location.search;
+      if (current === dest) {
+        return;
+      }
       window.location.href = dest;
     }
   },

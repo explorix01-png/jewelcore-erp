@@ -22,11 +22,13 @@ export default async function(req) {
     }
     if (bill.status !== 'finalized') return Response.json({ error: 'Bill not available' }, { status: 404 });
 
-    const [items, settingsList] = await Promise.all([
-      base44.asServiceRole.entities.BillItem.filter({ bill_id: bill.id }, '-created_date', 200),
-      base44.asServiceRole.entities.ShopSettings.list('-created_date', 1),
-    ]);
-    const settings = settingsList[0] || {};
+    const billItemsPromise = base44.asServiceRole.entities.BillItem.filter({ bill_id: bill.id }, '-created_date', 200);
+    const shopPromise = bill.tenant_id
+      ? base44.asServiceRole.entities.ShopSettings.get(bill.tenant_id).catch(() => null)
+      : base44.asServiceRole.entities.ShopSettings.list('-created_date', 1).then(r => r[0] || {}).catch(() => ({}));
+
+    const [items, shopRecord] = await Promise.all([billItemsPromise, shopPromise]);
+    const settings = shopRecord || {};
 
     return Response.json({
       success: true,

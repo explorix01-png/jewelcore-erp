@@ -65,8 +65,12 @@ export default function WorkflowGuide() {
   );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
-      <PageHeader title={t("workflow.title")} subtitle={t("workflow.subtitle")} />
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+      <PageHeader
+        title={t("workflow.title")}
+        subtitle={t("workflow.subtitle")}
+        badge={<span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200"><BookOpen className="w-3.5 h-3.5 text-amber-600" /> Operational Blueprint</span>}
+      />
 
       {/* Core Principle */}
       <div className="rounded-xl border bg-amber-50/30 p-5 mb-6">

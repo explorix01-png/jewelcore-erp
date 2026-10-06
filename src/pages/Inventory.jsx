@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useT } from "@/lib/i18n";
 import { usePermission } from "@/lib/permissions";
-import { PageHeader, Spinner, EmptyState, Badge, TableShell } from "@/components/ui/erp";
+import { PageHeader, Spinner, EmptyState, Badge, TableShell, StatCard } from "@/components/ui/erp";
 import { fmtNum, fmtWt3 } from "@/lib/billCalc";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Package, Search, History, Barcode as BarcodeIcon, Trash2, Receipt, Scan, Info, Printer, PackagePlus, Plus, Pencil } from "lucide-react";
 import Code128Barcode from "@/components/Code128Barcode";
-import { printBarcodeLabel } from "@/lib/printBarcode";
+import PrintBarcodeDialog from "@/components/inventory/PrintBarcodeDialog";
 import ItemDetailsDialog from "@/components/inventory/ItemDetailsDialog";
 import InventoryBarcodeScanner from "@/components/inventory/InventoryBarcodeScanner";
 import NewItemDialog from "@/components/inventory/NewItemDialog";
@@ -71,6 +71,26 @@ export default function Inventory() {
   const categories = useMemo(() => ["all", ...Array.from(new Set(items.map((i) => i.category_name).filter(Boolean)))], [items]);
   const purities = useMemo(() => ["all", ...Array.from(new Set(items.map((i) => i.purity_display).filter(Boolean)))], [items]);
 
+  // Real-time stock summary statistics from active inventory
+  const inventoryStats = useMemo(() => {
+    let pieces = 0, gross = 0, net = 0, lowStock = 0;
+    for (const it of items) {
+      pieces += Number(it.quantity || 0);
+      gross += Number(it.gross_weight || 0);
+      net += Number(it.net_weight || 0);
+      if (it.status === "low_stock" || it.status === "out_of_stock") {
+        lowStock++;
+      }
+    }
+    return {
+      count: items.length,
+      pieces,
+      gross: gross.toFixed(3),
+      net: net.toFixed(3),
+      lowStock,
+    };
+  }, [items]);
+
   const filtered = useMemo(() => items.filter((i) => {
     const x = debouncedQ.toLowerCase();
     const matchQ = !x || i.item_name?.toLowerCase().includes(x) || i.item_code?.toLowerCase().includes(x) || i.hsn?.toLowerCase().includes(x) || i.barcode?.toLowerCase().includes(x) || i.huid?.toLowerCase().includes(x) || i.category_name?.toLowerCase().includes(x) || i.purity_display?.toLowerCase().includes(x);
@@ -97,63 +117,180 @@ export default function Inventory() {
     finally { setDeleting(false); }
   };
 
+  const handleBarcodeLookup = async (code) => {
+    const cleanCode = (code || "").trim();
+    if (!cleanCode) return;
+
+    // 1. Check in currently loaded items
+    let item = items.find((i) => i.barcode === cleanCode || i.item_code === cleanCode || i.huid === cleanCode);
+    if (item) {
+      setDetailsItem(item);
+      return;
+    }
+
+    // 2. Query backend database if not in active state (e.g. silver item scanned while on gold view, or beyond 500 items)
+    try {
+      let results = await base44.entities.InventoryItem.filter({ barcode: cleanCode, is_archived: false }, "-updated_date", 1);
+      if (!results || results.length === 0) {
+        results = await base44.entities.InventoryItem.filter({ item_code: cleanCode, is_archived: false }, "-updated_date", 1);
+      }
+      if (!results || results.length === 0) {
+        results = await base44.entities.InventoryItem.filter({ huid: cleanCode, is_archived: false }, "-updated_date", 1);
+      }
+
+      if (results && results.length > 0) {
+        const found = results[0];
+        if (found.metal_type && found.metal_type !== metal) {
+          navigate(`/inventory/${found.metal_type}`);
+        }
+        setDetailsItem(found);
+        return;
+      }
+    } catch (err) {
+      console.error("Barcode lookup error:", err);
+    }
+
+    alert(`Barcode "${cleanCode}" was not found in inventory.`);
+  };
+
   const onFound = (code) => {
     setScanOpen(false);
-    const item = items.find((i) => i.barcode === code || i.item_code === code || i.huid === code);
-    if (!item) { alert(t("inventory.barcodeNotFound")); return; }
-    setDetailsItem(item);
+    handleBarcodeLookup(code);
   };
 
   useUsbScanner((code) => {
-    const item = items.find((i) => i.barcode === code || i.item_code === code || i.huid === code);
-    if (item) setDetailsItem(item);
+    handleBarcodeLookup(code);
   });
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       <PageHeader
-        title={metal === "gold" ? t("inventory.gold") : t("inventory.silver")}
-        subtitle={t("inventory.subtitle")}
+        badge={
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-800 border border-amber-500/20">
+              <Package className="w-3.5 h-3.5 text-amber-600" />
+              <span>Stock Vault</span>
+            </span>
+            {/* Metal Quick Switcher */}
+            <div className="inline-flex items-center p-0.5 rounded-lg bg-muted border border-border">
+              <button
+                onClick={() => navigate("/inventory/gold")}
+                className={`px-2.5 py-0.5 rounded-md text-xs font-semibold transition-all ${
+                  metal === "gold" ? "bg-amber-500 text-slate-950 shadow-2xs font-bold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Gold Stock
+              </button>
+              <button
+                onClick={() => navigate("/inventory/silver")}
+                className={`px-2.5 py-0.5 rounded-md text-xs font-semibold transition-all ${
+                  metal === "silver" ? "bg-slate-700 text-white shadow-2xs font-bold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Silver Stock
+              </button>
+            </div>
+          </div>
+        }
+        title={metal === "gold" ? "Gold Inventory & Stock" : "Silver Inventory & Stock"}
+        subtitle="Catalog jewellery designs, track barcodes & HUID hallmarking, manage weights and stock levels."
         actions={
-          <div className="flex flex-wrap gap-2">
-            {can("inventory", "create") && <Button onClick={() => setNewItemOpen(true)}><Plus className="w-4 h-4 mr-1" /> {t("inv.newItemStock")}</Button>}
-            {can("inventory", "adjust") && <Button variant="outline" onClick={() => setAddStockOpen(true)}><PackagePlus className="w-4 h-4 mr-1" /> {t("inv.addStock")}</Button>}
-            <Button variant="outline" onClick={() => setScanOpen(true)}><Scan className="w-4 h-4 mr-1" /> {t("inventory.scanBarcode")}</Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {can("inventory", "create") && (
+              <Button
+                onClick={() => setNewItemOpen(true)}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs"
+              >
+                <Plus className="w-4 h-4 mr-1.5" />
+                {t("inv.newItemStock")}
+              </Button>
+            )}
+            {can("inventory", "adjust") && (
+              <Button variant="outline" onClick={() => setAddStockOpen(true)} className="border-border hover:bg-muted">
+                <PackagePlus className="w-4 h-4 mr-1.5 text-emerald-600" />
+                {t("inv.addStock")}
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setScanOpen(true)} className="border-border hover:bg-muted">
+              <Scan className="w-4 h-4 mr-1.5 text-blue-600" />
+              {t("inventory.scanBarcode")}
+            </Button>
           </div>
         }
       />
-      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 mb-4">
-        <div className="relative w-full sm:flex-1 sm:min-w-[200px] sm:max-w-sm">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={q} onChange={(e) => { setQ(e.target.value); pag.setPage(1); }} placeholder={t("inventory.searchPlaceholder")} className="pl-9" />
+
+      {/* Stock Valuation KPI Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Cataloged Designs"
+          value={inventoryStats.count}
+          sub={`${inventoryStats.pieces} total piece(s) in vault`}
+          icon={Package}
+          accent="bg-blue-50 text-blue-700 border border-blue-200/60"
+        />
+        <StatCard
+          label="Total Gross Weight"
+          value={`${inventoryStats.gross} g`}
+          sub="Combined item gross wt"
+          icon={Package}
+          accent="bg-amber-50 text-amber-700 border border-amber-200/60"
+        />
+        <StatCard
+          label="Total Net Weight"
+          value={`${inventoryStats.net} g`}
+          sub="Metal net weight excluding stones"
+          icon={Package}
+          accent="bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+        />
+        <StatCard
+          label="Low / Out of Stock"
+          value={inventoryStats.lowStock}
+          sub={inventoryStats.lowStock > 0 ? "Requires replenishing" : "All stock healthy"}
+          icon={Package}
+          accent={inventoryStats.lowStock > 0 ? "bg-red-50 text-red-700 border border-red-200/60" : "bg-teal-50 text-teal-700 border border-teal-200/60"}
+        />
+      </div>
+
+      {/* Search and Filters Card */}
+      <div className="rounded-xl border border-border/80 bg-card p-4 shadow-2xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={q}
+              onChange={(e) => { setQ(e.target.value); pag.setPage(1); }}
+              placeholder="Search by item name, barcode, HUID, or code..."
+              className="pl-9 bg-background"
+            />
+          </div>
+          <div className="w-full sm:w-[180px]">
+            <SearchableSelect
+              options={[{ value: "all", label: t("inventory.allCategories") }, ...categories.slice(1).map((c) => ({ value: c, label: c }))]}
+              value={catFilter}
+              onChange={(v) => { setCatFilter(v); pag.setPage(1); }}
+              placeholder={t("inventory.allCategories")}
+              emptyText={t("inv.noMatches")}
+            />
+          </div>
+          <div className="w-full sm:w-[160px]">
+            <SearchableSelect
+              options={[{ value: "all", label: t("inventory.allPurities") }, ...purities.slice(1).map((p) => ({ value: p, label: p }))]}
+              value={purFilter}
+              onChange={(v) => { setPurFilter(v); pag.setPage(1); }}
+              placeholder={t("inventory.allPurities")}
+              emptyText={t("inv.noMatches")}
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); pag.setPage(1); }}>
+            <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("common.allStatuses")}</SelectItem>
+              <SelectItem value="in_stock">{t("status.in_stock")}</SelectItem>
+              <SelectItem value="low_stock">{t("status.low_stock")}</SelectItem>
+              <SelectItem value="out_of_stock">{t("status.out_of_stock")}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <div className="w-full sm:w-[170px]">
-          <SearchableSelect
-            options={[{ value: "all", label: t("inventory.allCategories") }, ...categories.slice(1).map((c) => ({ value: c, label: c }))]}
-            value={catFilter}
-            onChange={(v) => { setCatFilter(v); pag.setPage(1); }}
-            placeholder={t("inventory.allCategories")}
-            emptyText={t("inv.noMatches")}
-          />
-        </div>
-        <div className="w-full sm:w-[160px]">
-          <SearchableSelect
-            options={[{ value: "all", label: t("inventory.allPurities") }, ...purities.slice(1).map((p) => ({ value: p, label: p }))]}
-            value={purFilter}
-            onChange={(v) => { setPurFilter(v); pag.setPage(1); }}
-            placeholder={t("inventory.allPurities")}
-            emptyText={t("inv.noMatches")}
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); pag.setPage(1); }}>
-          <SelectTrigger className="w-full sm:w-[140px]"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("common.allStatuses")}</SelectItem>
-            <SelectItem value="in_stock">{t("status.in_stock")}</SelectItem>
-            <SelectItem value="low_stock">{t("status.low_stock")}</SelectItem>
-            <SelectItem value="out_of_stock">{t("status.out_of_stock")}</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
       {loading ? <Spinner /> : filtered.length === 0 ? (
         <EmptyState icon={Package} title={t("inventory.noInventory")} description={t("inventory.noInventoryDesc")} />
@@ -178,7 +315,7 @@ export default function Inventory() {
                   <p className="font-mono text-xs">{i.item_code || "—"}</p>
                 )}
               </td>
-              <td className="px-4 py-3 font-mono text-xs">{i.barcode || "—"}</td>
+              <td className="px-4 py-3 font-mono text-xs">{i.barcode || i.item_code || "—"}</td>
               <td className="px-4 py-3">{i.category_name || "—"}</td>
               <td className="px-4 py-3">{i.purity_display || "—"}</td>
               <td className="px-4 py-3 text-xs">{i.hsn || "—"}</td>
@@ -303,8 +440,10 @@ function BarcodeDialog({ item, onClose, onDone, settings }) {
   const [generating, setGenerating] = useState(false);
   const [desc, setDesc] = useState("");
   const [savingDesc, setSavingDesc] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
   useEffect(() => { if (item) setDesc(item.description || ""); }, [item]);
   if (!item) return null;
+  const barcodeValue = item.barcode || item.item_code;
   const generate = async () => {
     setGenerating(true);
     try {
@@ -338,11 +477,16 @@ function BarcodeDialog({ item, onClose, onDone, settings }) {
             <p className="text-xs text-muted-foreground">{t("inventory.masterManaged")}</p>
           </div>
           <div className="text-center mb-4">
-            {item.barcode ? (
+            {barcodeValue ? (
               <div>
-                <Code128Barcode value={item.barcode} height={Number(settings?.barcode_height) || 70} moduleWidth={Number(settings?.barcode_width) || 2} fontSize={Number(settings?.barcode_font_size) || 14} />
+                <Code128Barcode value={barcodeValue} height={Number(settings?.barcode_height) || 70} moduleWidth={Number(settings?.barcode_width) || 2} fontSize={Number(settings?.barcode_font_size) || 14} />
                 <div className="mt-3 flex justify-center gap-2">
-                  <Button variant="outline" onClick={() => printBarcodeLabel(item, settings)}><Printer className="w-4 h-4 mr-1" /> {t("inventory.printBarcode")}</Button>
+                  <Button variant="outline" onClick={() => setPrintOpen(true)}><Printer className="w-4 h-4 mr-1" /> {t("inventory.printBarcode")}</Button>
+                  {!item.barcode && (
+                    <Button variant="ghost" size="sm" onClick={generate} disabled={generating} className="text-xs">
+                      {generating ? t("common.processing") : t("inventory.generateBarcode")}
+                    </Button>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">{t("inventory.barcodeStable")}</p>
               </div>
@@ -361,6 +505,7 @@ function BarcodeDialog({ item, onClose, onDone, settings }) {
           </div>
         </div>
       </DialogContent>
+      <PrintBarcodeDialog open={printOpen} onClose={() => setPrintOpen(false)} item={item} settings={settings} />
     </Dialog>
   );
 }

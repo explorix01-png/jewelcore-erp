@@ -24,23 +24,43 @@ export function useVoiceAssistant() {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState("idle"); // idle|listening|processing|speaking|error
   const [transcript, setTranscript] = useState("");
+  const [interimTranscript, setInterimTranscript] = useState("");
   const [reply, setReply] = useState("");
   const [error, setError] = useState("");
   const [lang, setLang] = useState(() => localStorage.getItem(LANG_KEY) || "en");
+  const [isMuted, setIsMuted] = useState(() => localStorage.getItem("jewelcore.voice.muted") === "true");
   const [disambiguation, setDisambiguation] = useState(null); // { matches, onSelect }
   const [confirm, setConfirm] = useState(null); // { target, action, name, matches, bill_number }
 
   const recRef = useRef(null);
 
   useEffect(() => { localStorage.setItem(LANG_KEY, lang); }, [lang]);
+  useEffect(() => { localStorage.setItem("jewelcore.voice.muted", String(isMuted)); }, [isMuted]);
   useEffect(() => () => { stopSpeaking(); if (recRef.current) try { recRef.current.abort(); } catch {} }, []);
+
+  const toggleMute = useCallback(() => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      if (next) stopSpeaking();
+      return next;
+    });
+  }, []);
 
   const say = useCallback(async (text) => {
     setReply(text);
+    if (isMuted) {
+      setStatus("idle");
+      return;
+    }
     setStatus("speaking");
-    await speak(text, lang);
-    setStatus("idle");
-  }, [lang]);
+    await speak(text, lang, { onEnd: () => setStatus("idle") });
+  }, [lang, isMuted]);
+
+  const replaySpeech = useCallback(async () => {
+    if (!reply) return;
+    setStatus("speaking");
+    await speak(reply, lang, { onEnd: () => setStatus("idle") });
+  }, [reply, lang]);
 
   const fail = useCallback((msg) => { setError(msg); setStatus("error"); }, []);
 
@@ -60,7 +80,7 @@ export function useVoiceAssistant() {
       const res = await base44.functions.invoke("voiceAssistant", { action: "query", query_type: queryType, lang });
       await say(res.data?.reply || t("voice.noData"));
     } catch { await say(t("voice.noData")); }
-  }, [canAny, t, say]);
+  }, [canAny, t, say, lang]);
 
   // Dispatch the structured result returned by the backend `understand` action.
   const dispatchUnderstood = useCallback(async (data) => {
@@ -131,6 +151,7 @@ export function useVoiceAssistant() {
     const text = String(rawText || "").trim();
     if (!text) { fail(t("voice.noSpeech")); return; }
     setTranscript(text);
+    setInterimTranscript("");
     setError("");
     setDisambiguation(null);
     setStatus("processing");
@@ -145,26 +166,90 @@ export function useVoiceAssistant() {
         await runQuery(matched.queryType);
         return;
       }
-      // destructive or null → backend LLM understand (with server-side resolution).
+      if (matched?.kind === "entity") {
+        const res = await base44.functions.invoke("voiceAssistant", {
+          action: "resolve",
+          resolve_type: matched.entityType,
+          name: matched.name
+        });
+        const matches = res.data?.matches || [];
+        if (matched.entityType === "customer") {
+          if (matches.length === 0) { await say(t("voice.customerNotFound")); return; }
+          if (matches.length === 1) {
+            navigate(`/customers/${matches[0].id}`);
+            await say(`${t("voice.openingCustomer")} ${matches[0].label}`);
+            return;
+          }
+          setDisambiguation({ matches, onSelect: (m) => { setDisambiguation(null); navigate(`/customers/${m.id}`); say(`${t("voice.openingCustomer")} ${m.label}`); } });
+          setStatus("idle");
+          return;
+        }
+        if (matched.entityType === "item") {
+          if (matches.length === 0) { await say(t("voice.itemNotFound")); return; }
+          const metal = matches[0].metal_type === "silver" ? "silver" : "gold";
+          if (matches.length === 1) {
+            if (canAny("inventory")) { navigate(`/inventory/${metal}`); await say(`${t("voice.openingInventory")} ${matches[0].label}`); }
+            else await say(t("voice.noAccess"));
+            return;
+          }
+          setDisambiguation({ matches, onSelect: (m) => {
+            setDisambiguation(null);
+            const mt = m.metal_type === "silver" ? "silver" : "gold";
+            if (canAny("inventory")) { navigate(`/inventory/${mt}`); say(`${t("voice.openingInventory")} ${m.label}`); }
+            else say(t("voice.noAccess"));
+          } });
+          setStatus("idle");
+          return;
+        }
+        if (matched.entityType === "supplier") {
+          if (matches.length === 0) { await say(t("voice.supplierNotFound")); return; }
+          if (canAny("suppliers")) { navigate("/suppliers"); await say(t("voice.openingSuppliers")); }
+          else await say(t("voice.noAccess"));
+          return;
+        }
+      }
+      if (matched?.kind === "bill_number") {
+        if (canAny("bills")) {
+          navigate("/bills");
+          await say(`${t("voice.openingBills")} #${matched.billNumber}`);
+        } else {
+          await say(t("voice.noAccess"));
+        }
+        return;
+      }
+      // destructive or arbitrary phrasing → backend understand
       const res = await base44.functions.invoke("voiceAssistant", { action: "understand", transcript: text, lang });
       if (!res.data) { await say(t("voice.unknown")); return; }
       await dispatchUnderstood(res.data);
     } catch (e) {
       fail(t("voice.error"));
     }
-  }, [goNavigate, runQuery, dispatchUnderstood, say, fail, t, lang]);
+  }, [goNavigate, runQuery, dispatchUnderstood, say, fail, t, lang, canAny, navigate]);
 
   // --- Speech recognition ---
   const startListening = useCallback(() => {
-    setError(""); setReply(""); setDisambiguation(null); setConfirm(null);
+    setError(""); setReply(""); setDisambiguation(null); setConfirm(null); setInterimTranscript("");
     if (!recognitionSupported()) { fail(t("voice.micUnsupported")); return; }
     const rec = createRecognition(lang);
     if (!rec) { fail(t("voice.micUnsupported")); return; }
     recRef.current = rec;
     setStatus("listening");
+
     rec.onresult = (e) => {
-      const txt = e.results?.[0]?.[0]?.transcript || "";
-      processCommand(txt);
+      let interim = "";
+      let final = "";
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          final += e.results[i][0].transcript;
+        } else {
+          interim += e.results[i][0].transcript;
+        }
+      }
+      if (interim) setInterimTranscript(interim);
+      if (final) {
+        setInterimTranscript("");
+        processCommand(final);
+      }
     };
     rec.onerror = (e) => {
       if (e.error === "not-allowed" || e.error === "service-not-allowed") fail(t("voice.micDenied"));
@@ -178,6 +263,7 @@ export function useVoiceAssistant() {
   const stopListening = useCallback(() => {
     if (recRef.current) { try { recRef.current.stop(); } catch {} }
     setStatus("idle");
+    setInterimTranscript("");
   }, []);
 
   const submitText = useCallback((text) => { processCommand(text); }, [processCommand]);
@@ -212,7 +298,8 @@ export function useVoiceAssistant() {
   const cancelDestructive = useCallback(() => { setConfirm(null); setStatus("idle"); setReply(t("voice.cancelledByUser")); }, [t]);
 
   return {
-    open, setOpen, status, transcript, reply, error, lang, setLang,
+    open, setOpen, status, transcript, interimTranscript, reply, error, lang, setLang,
+    isMuted, toggleMute, replaySpeech,
     disambiguation, confirm,
     startListening, stopListening, submitText,
     confirmDestructive, cancelDestructive,

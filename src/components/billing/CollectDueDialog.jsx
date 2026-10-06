@@ -17,6 +17,10 @@ export default function CollectDueDialog({ bill, onClose, onDone }) {
   if (!bill) return null;
 
   const collect = async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      alert("Financial Safety Lock Active: Cannot record due payment while offline. Live database connection required to prevent financial balance mismatch.");
+      return;
+    }
     const amt = Number(amount);
     if (amt <= 0 || amt > Number(bill.due_amount)) { alert(t("collectDue.invalidAmount") + " (" + fmt(bill.due_amount) + ")"); return; }
     setSaving(true);

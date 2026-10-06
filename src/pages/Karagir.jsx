@@ -23,13 +23,25 @@ const KWO_STATUSES = ["PENDING", "ASSIGNED", "IN_PROGRESS", "READY", "DELIVERED"
 export default function Karagir() {
   const t = useT();
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-      <PageHeader title={t("karagir.title")} subtitle={t("karagir.subtitle")} />
-      <Tabs defaultValue="karagirs">
-        <TabsList className="grid grid-cols-2 w-full max-w-md mb-4">
-          <TabsTrigger value="karagirs">{t("karagir.karagirs")}</TabsTrigger>
-          <TabsTrigger value="orders">{t("karagir.workOrders")}</TabsTrigger>
-        </TabsList>
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+      <PageHeader
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-800 border border-amber-500/20">
+            <Hammer className="w-3.5 h-3.5 text-amber-600" />
+            <span>Artisan & Goldsmith Workshop</span>
+          </span>
+        }
+        title={t("karagir.title")}
+        subtitle="Manage in-house and contract goldsmiths, track job work orders, casting allocations, and craftsmanship progress."
+      />
+
+      <Tabs defaultValue="karagirs" className="space-y-4">
+        <div className="p-1 rounded-xl bg-card border border-border/80 shadow-2xs inline-block">
+          <TabsList className="grid grid-cols-2 w-full max-w-sm bg-muted/60">
+            <TabsTrigger value="karagirs" className="text-xs font-semibold">{t("karagir.karagirs")}</TabsTrigger>
+            <TabsTrigger value="orders" className="text-xs font-semibold">{t("karagir.workOrders")}</TabsTrigger>
+          </TabsList>
+        </div>
         <TabsContent value="karagirs"><KaragirsTab /></TabsContent>
         <TabsContent value="orders"><KaragirOrdersTab /></TabsContent>
       </Tabs>

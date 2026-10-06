@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import { buildLoginUrl, sanitizeInternalPath } from '@/lib/authReturnTo';
 
 const DefaultFallback = () => (
   <div className="fixed inset-0 flex items-center justify-center">
@@ -11,6 +12,7 @@ const DefaultFallback = () => (
 
 export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthenticatedElement }) {
   const { isAuthenticated, isLoadingAuth, authChecked, authError, checkUserAuth } = useAuth();
+  const location = useLocation();
 
   useEffect(() => {
     if (!authChecked && !isLoadingAuth) {
@@ -26,11 +28,15 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
     if (authError.type === 'user_not_registered') {
       return <UserNotRegisteredError />;
     }
-    return unauthenticatedElement;
+    const safeTarget = sanitizeInternalPath(location.pathname + location.search, '');
+    const loginUrl = buildLoginUrl(safeTarget);
+    return unauthenticatedElement || <Navigate to={loginUrl} replace />;
   }
 
   if (!isAuthenticated) {
-    return unauthenticatedElement;
+    const safeTarget = sanitizeInternalPath(location.pathname + location.search, '');
+    const loginUrl = buildLoginUrl(safeTarget);
+    return unauthenticatedElement || <Navigate to={loginUrl} replace />;
   }
 
   return <Outlet />;

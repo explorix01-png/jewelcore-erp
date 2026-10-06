@@ -39,11 +39,22 @@ export default function BarcodeScanner({ inventory, onAddItem }) {
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
-  const handleScan = (code) => {
-    const item = inventory.find((i) => i.barcode === code || i.item_code === code || i.huid === code);
+  const handleScan = async (code) => {
+    const clean = (code || "").trim();
     stopCamera();
+    let item = inventory.find((i) => i.barcode === clean || i.item_code === clean || i.huid === clean);
+    if (!item) {
+      try {
+        let res = await base44.entities.InventoryItem.filter({ barcode: clean, is_archived: false }, "-updated_date", 1);
+        if (!res || res.length === 0) res = await base44.entities.InventoryItem.filter({ item_code: clean, is_archived: false }, "-updated_date", 1);
+        if (!res || res.length === 0) res = await base44.entities.InventoryItem.filter({ huid: clean, is_archived: false }, "-updated_date", 1);
+        if (res && res.length > 0) item = res[0];
+      } catch (e) {
+        console.error("Camera scan backend lookup error:", e);
+      }
+    }
     if (!item || Number(item.quantity) <= 0) {
-      setNotFound(code);
+      setNotFound(clean);
       setFoundItem(null);
       return;
     }

@@ -59,10 +59,15 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       setIsLoadingAuth(false);
       setAuthChecked(true);
+      setAuthError(null);
     } catch (error) {
       console.error('User auth check failed:', error);
-      setIsLoadingAuth(false);
+      // Immediately clear invalid/expired token so app never enters a retry loop
+      base44.auth.setToken(null);
+      setUser(null);
+      setSession(null);
       setIsAuthenticated(false);
+      setIsLoadingAuth(false);
       setAuthChecked(true);
       
       // If user auth fails, it might be an expired token
@@ -94,20 +99,27 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setIsAuthenticated(false);
     setSession(null);
+    setAuthError(null);
     base44.shops.setActiveShopId(null);
+    base44.auth.setToken(null);
     
     if (shouldRedirect) {
-      // Use the SDK's logout method which handles token cleanup and redirect
-      base44.auth.logout(window.location.href);
+      // Safe, clean redirect to /login
+      base44.auth.logout('/login');
     } else {
       // Just remove the token without redirect
       base44.auth.logout();
     }
   };
 
-  const navigateToLogin = () => {
-    // Use the SDK's redirectToLogin method
-    base44.auth.redirectToLogin(window.location.href);
+  const navigateToLogin = (targetPath) => {
+    if (typeof window === 'undefined') return;
+    // Rule 1: Never redirect to login if we are already on login
+    if (window.location.pathname === '/login' || window.location.pathname.startsWith('/login/')) {
+      return;
+    }
+    const safeTarget = targetPath || (window.location.pathname !== '/login' ? window.location.pathname + window.location.search : '/');
+    base44.auth.redirectToLogin(safeTarget);
   };
 
   return (

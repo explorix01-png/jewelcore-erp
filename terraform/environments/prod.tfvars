@@ -1,0 +1,12 @@
+environment              = "prod"
+aws_region               = "ap-south-1"
+vpc_cidr                 = "10.30.0.0/16"
+app_count                = 3
+ecs_cpu                  = 1024
+ecs_memory               = 2048
+db_instance_class        = "db.t4g.small"
+db_allocated_storage     = 50
+db_max_allocated_storage = 200
+db_multi_az              = true
+db_deletion_protection   = true
+backup_retention_days    = 30

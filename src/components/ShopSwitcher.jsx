@@ -38,7 +38,7 @@ export default function ShopSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border/80 bg-background/80 hover:bg-muted/80 text-foreground transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-amber-500/20 max-w-[220px]"
+          className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1.5 rounded-lg border border-border/80 bg-background/80 hover:bg-muted/80 text-foreground transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-amber-500/20 max-w-[125px] sm:max-w-[200px] md:max-w-[240px] shrink min-w-0"
           disabled={switching}
           title="Switch Shop / Business"
         >

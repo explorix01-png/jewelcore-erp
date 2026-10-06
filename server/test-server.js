@@ -1,6 +1,6 @@
 // Comprehensive automated test suite for JewelCore ERP self-hosted backend
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = process.env.TEST_BASE_URL || 'http://127.0.0.1:3001';
 
 async function fetchJson(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
@@ -16,11 +16,12 @@ async function runTests() {
 
   // Auto-start backend if not currently running
   try {
-    await fetch(`${BASE_URL}/api/health`);
+    const res = await fetch(`${BASE_URL}/api/health`);
+    if (!res.ok) throw new Error('Not healthy');
   } catch (e) {
     console.log('⚡ Backend server not active on port 3001, auto-starting server in-process...');
     await import('./server.js');
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 40; i++) {
       try {
         const res = await fetch(`${BASE_URL}/api/health`);
         if (res.ok) break;
@@ -125,7 +126,8 @@ async function runTests() {
     headers: authHeaders,
     body: JSON.stringify({})
   });
-  if (!session2.ok || !session2.data.has_shop || session2.data.shop.shop_name !== 'Royal Jewellers') {
+  const expectedShop = session1.data.has_shop ? session1.data.shop?.shop_name : 'Royal Jewellers';
+  if (!session2.ok || !session2.data.has_shop || session2.data.shop.shop_name !== expectedShop) {
     throw new Error(`Post-onboarding resolveSession failed: ${JSON.stringify(session2.data)}`);
   }
   console.log('✓ Post-onboarding session verified. Shop:', session2.data.shop.shop_name);

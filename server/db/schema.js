@@ -133,7 +133,23 @@ export async function initSchema() {
     `CREATE INDEX IF NOT EXISTS idx_membership_tenant ON "ShopMembership" ((data->>'tenant_id'));`,
 
     // Notification
-    `CREATE INDEX IF NOT EXISTS idx_notif_read ON "Notification" ((data->>'is_read'));`
+    `CREATE INDEX IF NOT EXISTS idx_notif_read ON "Notification" ((data->>'is_read'));`,
+
+    // Tenant-aware composite indexes for multi-tenant SaaS query optimization
+    `CREATE INDEX IF NOT EXISTS idx_bill_tenant_date ON "Bill" ((data->>'tenant_id'), (data->>'bill_date'));`,
+    `CREATE INDEX IF NOT EXISTS idx_bill_tenant_status ON "Bill" ((data->>'tenant_id'), (data->>'status'));`,
+    `CREATE INDEX IF NOT EXISTS idx_bill_tenant_customer ON "Bill" ((data->>'tenant_id'), (data->>'customer_id'));`,
+    `CREATE INDEX IF NOT EXISTS idx_billitem_tenant_bill ON "BillItem" ((data->>'tenant_id'), (data->>'bill_id'));`,
+    `CREATE INDEX IF NOT EXISTS idx_inv_tenant_metal ON "InventoryItem" ((data->>'tenant_id'), (data->>'metal_type'));`,
+    `CREATE INDEX IF NOT EXISTS idx_inv_tenant_barcode ON "InventoryItem" ((data->>'tenant_id'), (data->>'barcode'));`,
+    `CREATE INDEX IF NOT EXISTS idx_inv_tenant_huid ON "InventoryItem" ((data->>'tenant_id'), (data->>'huid'));`,
+    `CREATE INDEX IF NOT EXISTS idx_cust_tenant_code ON "Customer" ((data->>'tenant_id'), (data->>'customer_code'));`,
+    `CREATE INDEX IF NOT EXISTS idx_cust_tenant_mobile ON "Customer" ((data->>'tenant_id'), (data->>'mobile'));`,
+    `CREATE INDEX IF NOT EXISTS idx_rate_tenant_metal_date ON "RateHistory" ((data->>'tenant_id'), (data->>'metal_type'), (data->>'effective_date'));`,
+    `CREATE INDEX IF NOT EXISTS idx_pur_tenant_date ON "Purchase" ((data->>'tenant_id'), (data->>'purchase_date'));`,
+    `CREATE INDEX IF NOT EXISTS idx_pay_tenant_bill ON "Payment" ((data->>'tenant_id'), (data->>'bill_id'));`,
+    `CREATE INDEX IF NOT EXISTS idx_remind_tenant_status ON "DueReminder" ((data->>'tenant_id'), (data->>'status'));`,
+    `CREATE INDEX IF NOT EXISTS idx_member_tenant_user ON "ShopMembership" ((data->>'tenant_id'), (data->>'user_id'));`
   ];
 
   // Add tenant_id index for all 29 entity tables

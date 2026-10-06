@@ -58,9 +58,40 @@ export async function getDbClient() {
       fs.mkdirSync(pgDataDir, { recursive: true });
     }
 
-    pgliteInstance = new PGlite(process.env.TEST_MEMORY_DB === 'true' ? undefined : pgDataDir);
-    activeEngine = 'pglite-embedded';
-    console.log(`[Database] Initialized embedded PostgreSQL (PGlite) at ${pgDataDir}`);
+    const openPgLite = async (dir) => {
+      const pidFile = path.join(dir, 'postmaster.pid');
+      if (fs.existsSync(pidFile)) {
+        try { fs.unlinkSync(pidFile); } catch {}
+      }
+      const inst = new PGlite(process.env.TEST_MEMORY_DB === 'true' ? undefined : dir);
+      await inst.waitReady;
+      return inst;
+    };
+
+    try {
+      pgliteInstance = await openPgLite(pgDataDir);
+      activeEngine = 'pglite-embedded';
+      console.log(`[Database] Initialized embedded PostgreSQL (PGlite) at ${pgDataDir}`);
+    } catch (err) {
+      console.warn(`[Database] PGlite failed to open at ${pgDataDir} (${err.message}). Auto-recovering cluster from SQLite...`);
+      try {
+        fs.rmSync(pgDataDir, { recursive: true, force: true });
+        fs.mkdirSync(pgDataDir, { recursive: true });
+      } catch (rmErr) {
+        console.warn('[Database Recovery warning]', rmErr.message);
+      }
+      try {
+        pgliteInstance = await openPgLite(pgDataDir);
+        activeEngine = 'pglite-embedded';
+        console.log(`[Database] Initialized fresh embedded PostgreSQL (PGlite) at ${pgDataDir}`);
+        const { importFromSqlite } = await import('./sqliteImporter.js');
+        await importFromSqlite({ overwriteExisting: true });
+        console.log('[Database] Auto-recovery complete from SQLite.');
+      } catch (recoveryErr) {
+        console.error('[Database Startup Error]', recoveryErr);
+        throw recoveryErr;
+      }
+    }
   }
 
   return pgliteInstance;

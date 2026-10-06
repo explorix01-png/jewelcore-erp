@@ -74,8 +74,11 @@ function buildWhere(query = {}, startParamIndex = 1) {
         params.push(typeof val.$ne === 'boolean' ? String(val.$ne) : String(val.$ne));
       }
     } else if (typeof val === 'boolean') {
-      clauses.push(`((data->>'${key}')::boolean = $${paramIdx++})`);
-      params.push(val);
+      if (val === false) {
+        clauses.push(`COALESCE((data->>'${key}')::boolean, false) = false`);
+      } else {
+        clauses.push(`COALESCE((data->>'${key}')::boolean, false) = true`);
+      }
     } else if (val === null) {
       clauses.push(`((data->>'${key}') IS NULL)`);
     } else {

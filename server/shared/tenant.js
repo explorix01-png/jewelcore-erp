@@ -100,6 +100,14 @@ export async function authorize(base44, user, action) {
   const ctx = await resolveTenant(base44, user);
   if (!ctx) return { authorized: false, error: "No active shop membership found. Please select or join a shop.", status: 403 };
 
+  if (base44 && ctx.tenant_id) {
+    if (typeof base44.bindTenant === 'function') {
+      base44.bindTenant(ctx.tenant_id);
+    } else {
+      base44.tenantId = ctx.tenant_id;
+    }
+  }
+
   if (!canPerform(ctx.role, action)) {
     return { authorized: false, error: `Permission denied: your role (${ctx.role}) cannot perform this action`, status: 403 };
   }

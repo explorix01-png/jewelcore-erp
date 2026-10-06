@@ -1,4 +1,4 @@
-import { Suspense, lazy, useRef } from "react";
+import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -6,6 +6,7 @@ import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'r
 import { I18nProvider } from '@/lib/I18nProvider';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { isAuthRoute } from '@/lib/authReturnTo';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -39,9 +40,6 @@ const WorkflowGuide = lazy(() => import("@/pages/WorkflowGuide"));
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, session, user } = useAuth();
   const location = useLocation();
-  // Rate gate ref: fires only once on initial session resolution. Must be declared
-  // before any early returns to satisfy the rules-of-hooks lint rule.
-  const rateGateDone = useRef(false);
 
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
@@ -57,9 +55,13 @@ const AuthenticatedApp = () => {
     if (authError.type === 'user_not_registered') {
       return <UserNotRegisteredError />;
     } else if (authError.type === 'auth_required') {
-      // Redirect to login automatically
-      navigateToLogin();
-      return null;
+      // If we are already on a public/auth route (/login, /register, etc.), do NOT redirect and do NOT return null!
+      // Allow the public route to render so the user sees the login form.
+      const isPublicRoute = isAuthRoute(location.pathname) || location.pathname.startsWith('/bill/');
+      if (!isPublicRoute) {
+        navigateToLogin(location.pathname + location.search);
+        return null;
+      }
     }
   }
 
@@ -70,21 +72,6 @@ const AuthenticatedApp = () => {
   }
   if (!needsOnboarding && session?.has_shop && location.pathname === '/onboarding') {
     return <Navigate to="/" replace />;
-  }
-
-  // Daily rate gate: fires ONLY ONCE on initial authenticated landing/session resolution.
-  // After the first check, normal navigation (including to /) is never hijacked by this gate.
-  // The ref resets on full page reload / new login, so each new session gets exactly one check.
-  const isAdmin = session?.user?.active_shop_role === 'admin';
-  const needsDailyRates = !rateGateDone.current && !needsOnboarding && isAdmin && session?.has_shop && session.rates_today === false;
-  if (needsDailyRates && location.pathname === '/') {
-    rateGateDone.current = true;
-    return <Navigate to="/rates" replace />;
-  }
-  // Mark the initial rate check complete once the session is resolved and onboarding is done,
-  // so subsequent SPA navigations to / never re-trigger the redirect.
-  if (!needsOnboarding && session?.has_shop) {
-    rateGateDone.current = true;
   }
 
   // Role-based landing: cashier goes to billing, others to dashboard
@@ -102,7 +89,7 @@ const AuthenticatedApp = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/bill/:token" element={<CustomerBillPage />} />
-      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+      <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/billing" element={<NewBill />} />
@@ -110,8 +97,8 @@ const AuthenticatedApp = () => {
           <Route path="/customers" element={<Customers />} />
           <Route path="/customers/:id" element={<CustomerDetail />} />
           <Route path="/suppliers" element={<Suppliers />} />
-          <Route path="/purchase" element={<Navigate to="/purchase/add" replace />} />
-          <Route path="/purchase/add" element={<PurchaseAdd />} />
+          <Route path="/purchase" element={<Navigate to="/purchase/management" replace />} />
+          <Route path="/purchase/add" element={<Navigate to="/purchase/management" replace />} />
           <Route path="/purchase/management" element={<PurchaseManagement />} />
           <Route path="/inventory/:metal" element={<Inventory />} />
           <Route path="/orders" element={<CustomerOrders />} />

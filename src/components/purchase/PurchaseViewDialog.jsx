@@ -44,6 +44,25 @@ export default function PurchaseViewDialog({ purchase, onClose, onEdit }) {
           <p><span className="text-muted-foreground">{t("common.date")}:</span> {purchase.purchase_date}</p>
           {purchase.payment_mode && <p><span className="text-muted-foreground">{t("purchase.paymentMode")}:</span> {purchase.payment_mode}</p>}
         </div>
+        {purchase.gold_settlement && (() => {
+          try {
+            const gs = typeof purchase.gold_settlement === "string" ? JSON.parse(purchase.gold_settlement) : purchase.gold_settlement;
+            if (!gs || !gs.settlement_value) return null;
+            return (
+              <div className="p-3 my-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-xs space-y-1.5">
+                <span className="font-bold text-amber-900 block">Gold / Metal Settlement Applied:</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono">
+                  <div><span className="text-muted-foreground block text-[10px]">Metal & Purity</span><span className="font-semibold capitalize">{gs.metal_type} · {gs.purity_display}</span></div>
+                  <div><span className="text-muted-foreground block text-[10px]">Net / Fine Wt</span><span className="font-semibold">{gs.net_weight}g ({gs.fine_weight}g)</span></div>
+                  <div><span className="text-muted-foreground block text-[10px]">Rate / g</span><span className="font-semibold">{fmt(gs.rate_per_gram)}</span></div>
+                  <div><span className="text-muted-foreground block text-[10px]">Settled Value</span><span className="font-bold text-amber-950">{fmt(gs.settlement_value)}</span></div>
+                </div>
+                {gs.reference && <p className="text-[11px] text-muted-foreground"><span className="font-medium">Ref / Item:</span> {gs.reference}</p>}
+                {gs.notes && <p className="text-[11px] text-muted-foreground"><span className="font-medium">Notes:</span> {gs.notes}</p>}
+              </div>
+            );
+          } catch(e) { return null; }
+        })()}
         <TableShell headers={[t("invoice.item"), t("common.quantity"), t("purchase.grossWt"), t("purchase.lessWt"), t("purchase.netWt"), t("billing.fineWt"), t("purchase.rate"), t("purchase.making"), t("common.total")]}>
           {items.map((it) => (
             <tr key={it.id}>

@@ -25,7 +25,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d jewelcore_ci"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -33,7 +33,7 @@ jobs:
     env:
       NODE_ENV: test
       PORT: 3001
-      DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/jewelcore_ci
+      DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/jewelcore_ci?sslmode=disable
       JWT_SECRET: ci-test-jwt-secret-key-32-characters-minimum-requirement
 
     steps:
@@ -55,14 +55,23 @@ jobs:
       - name: Typecheck codebase
         run: npm run typecheck
 
-      - name: Run multi-tenancy isolation tests
-        run: npm run test:multitenancy
-
       - name: Run PostgreSQL verification tests
         run: npm run test:postgres
 
+      - name: Run multi-tenancy isolation & attack tests
+        run: npm run test:multitenancy
+
       - name: Run backend & business logic verification tests
         run: npm run test:backend
+
+      - name: Run deep functional verification tests
+        run: npm run test:deep
+
+      - name: Run client requirements & calculation tests
+        run: npm run test:client
+
+      - name: Run comprehensive E2E QA tests
+        run: npm run test:qa
 
       - name: Build frontend production bundle
         run: npm run build

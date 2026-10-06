@@ -67,11 +67,11 @@ export default async function(req) {
 
     // Seed default gold and silver purities for this tenant
     const defaultPurities = [
-      { name: '24K', metal_type: 'gold', purity_value: 24, display_format: '24K', tenant_id: shopId, is_active: true },
-      { name: '22K', metal_type: 'gold', purity_value: 22, display_format: '22K', tenant_id: shopId, is_active: true },
-      { name: '20K', metal_type: 'gold', purity_value: 20, display_format: '20K', tenant_id: shopId, is_active: true },
-      { name: '18K', metal_type: 'gold', purity_value: 18, display_format: '18K', tenant_id: shopId, is_active: true },
-      { name: '14K', metal_type: 'gold', purity_value: 14, display_format: '14K', tenant_id: shopId, is_active: true },
+      { name: '24K', metal_type: 'gold', purity_value: 99.9, display_format: '24K', tenant_id: shopId, is_active: true },
+      { name: '22K', metal_type: 'gold', purity_value: 91.6, display_format: '22K', tenant_id: shopId, is_active: true },
+      { name: '20K', metal_type: 'gold', purity_value: 83.3, display_format: '20K', tenant_id: shopId, is_active: true },
+      { name: '18K', metal_type: 'gold', purity_value: 75.0, display_format: '18K', tenant_id: shopId, is_active: true },
+      { name: '14K', metal_type: 'gold', purity_value: 58.5, display_format: '14K', tenant_id: shopId, is_active: true },
       { name: 'Silver 999', metal_type: 'silver', purity_value: 99.9, display_format: '999', tenant_id: shopId, is_active: true }
     ];
     for (const p of defaultPurities) {

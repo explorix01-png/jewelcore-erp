@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import { useT } from "@/lib/i18n";
+import { usePermission } from "@/lib/permissions";
 import { PageHeader, Spinner, Badge } from "@/components/ui/erp";
-import { calcBill, fmt, fmtNum } from "@/lib/billCalc";
+import { calcBill, fmt, fmtNum, sortPuritiesDescending } from "@/lib/billCalc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Plus, Trash2, Check, Receipt, Scan, Printer, Eye } from "lucide-react";
+import { Search, Plus, Trash2, Check, Receipt, Scan, Printer, Eye, Calendar, AlertCircle } from "lucide-react";
 import PaymentSection from "@/components/billing/PaymentSection";
 import BarcodeScanner from "@/components/billing/BarcodeScanner";
 import { printInvoice } from "@/lib/printInvoice";
@@ -24,10 +25,14 @@ const formatPan = (v) => (v || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice
 
 export default function NewBill() {
   const t = useT();
+  const { can } = usePermission();
+  const canOverrideRate = can("rates", "update");
+
   const [customers, setCustomers] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [gstConfigs, setGstConfigs] = useState([]);
   const [rates, setRates] = useState([]);
+  const [purities, setPurities] = useState([]);
   const [settings, setSettings] = useState(null);
   const [mode, setMode] = useState("inventory");
   const [custQ, setCustQ] = useState("");
@@ -38,13 +43,26 @@ export default function NewBill() {
   const [rows, setRows] = useState([]);
   const [billDiscount, setBillDiscount] = useState(0);
   const [payments, setPayments] = useState([{ mode: "cash", amount: "" }]);
+  const [selectedPaymentMode, setSelectedPaymentMode] = useState("cash");
   const [useOldGold, setUseOldGold] = useState(false);
   const [creditDue, setCreditDue] = useState(false);
   const [paymentRef, setPaymentRef] = useState("");
-  const [oldGold, setOldGold] = useState({ item: "", metal: "gold", purity: "", grossWeight: 0, deductionWeight: 0, ratePerGram: 0 });
+  const [oldGold, setOldGold] = useState({
+    item: "",
+    metal: "gold",
+    purity: "",
+    purityValue: 0,
+    grossWeight: 0,
+    deductionWeight: 0,
+    ratePerGram: 0,
+    huid: "",
+    barcode: "",
+    notes: ""
+  });
   const [paymentNotes, setPaymentNotes] = useState("");
   const [billNotes, setBillNotes] = useState("");
   const [billDate, setBillDate] = useState(new Date().toISOString().slice(0, 10));
+  const [effectiveRateInfo, setEffectiveRateInfo] = useState(null);
   const [customRateOverride, setCustomRateOverride] = useState(false);
   const [gstEnabled, setGstEnabled] = useState(true);
   const [gstMode, setGstMode] = useState("intra");
@@ -58,19 +76,38 @@ export default function NewBill() {
 
   useEffect(() => {
     (async () => {
-      const [cust, inv, gst, rt, s] = await Promise.all([
+      const [cust, inv, gst, s, purs] = await Promise.all([
         base44.entities.Customer.list("-created_date", 200),
         base44.entities.InventoryItem.filter({ is_archived: false }, "-updated_date", 500),
         base44.entities.GSTConfig.filter({ is_active: true }, "-created_date", 20),
-        base44.entities.RateHistory.filter({ is_active: true }, "-effective_date", 50),
         base44.entities.ShopSettings.list("-created_date", 1),
+        base44.entities.PurityMaster.filter({ is_active: true }, "purity_value", 100).catch(() => []),
       ]);
       setCustomers(cust);
       setInventory(inv);
       setGstConfigs(gst);
-      setRates(rt);
       setSettings(s[0] || null);
       if (s[0]) setGstEnabled(s[0].gst_enabled !== false);
+      const sortedPurs = sortPuritiesDescending(purs, "gold");
+      setPurities(sortedPurs);
+
+      // Resolve effective rates for today's bill date
+      try {
+        const rateRes = await base44.functions.invoke("getEffectiveRates", { date: new Date().toISOString().slice(0, 10) });
+        if (rateRes.data?.success && rateRes.data.rates) {
+          setRates(rateRes.data.rates);
+          setEffectiveRateInfo({
+            date: rateRes.data.query_date,
+            gold24k: rateRes.data.gold_24k_rate,
+            silver: rateRes.data.silver_rate,
+            effectiveDate: rateRes.data.gold_effective_date,
+          });
+        }
+      } catch (rateErr) {
+        // Fallback to active rates
+        const rt = await base44.entities.RateHistory.filter({ is_active: true }, "-effective_date", 50);
+        setRates(rt);
+      }
     })();
   }, []);
 
@@ -85,20 +122,13 @@ export default function NewBill() {
     return inventory.filter((i) => Number(i.quantity) > 0 && (!x || i.item_name?.toLowerCase().includes(x) || i.item_code?.toLowerCase().includes(x) || i.huid?.toLowerCase().includes(x))).slice(0, 6);
   }, [itemQ, inventory]);
 
-  const barcodeMatch = useMemo(() => {
-    if (!barcodeQ) return null;
-    return inventory.find((i) => i.barcode === barcodeQ || i.item_code === barcodeQ || i.huid === barcodeQ);
-  }, [barcodeQ, inventory]);
+  const [scanFeedback, setScanFeedback] = useState(null);
 
   useEffect(() => {
-    if (barcodeMatch) addItem(barcodeMatch);
-     
-  }, [barcodeMatch]);
-
-  useUsbScanner((code) => {
-    const item = inventory.find((i) => i.barcode === code || i.item_code === code || i.huid === code);
-    if (item && Number(item.quantity) > 0) addItem(item);
-  });
+    if (!scanFeedback) return;
+    const t = setTimeout(() => setScanFeedback(null), 4000);
+    return () => clearTimeout(t);
+  }, [scanFeedback]);
 
   const rateFor = (metalType, purityDisplay) => {
     const r = rates.find((rt) => rt.metal_type === metalType && (!purityDisplay || rt.purity_display === purityDisplay) && rt.is_active);
@@ -106,8 +136,28 @@ export default function NewBill() {
   };
 
   const addItem = (inv) => {
+    if (!inv) return;
+    const availableStock = Number(inv.quantity) || 0;
+    if (availableStock <= 0) {
+      setScanFeedback({ type: "error", text: `⚠️ Item "${inv.item_name}" is out of stock.` });
+      return;
+    }
+
+    // Check how many units of this inventory piece are already added to the bill
+    const alreadyAddedQty = rows
+      .filter((r) => r._invId === inv.id || (r.item_id && r.item_id === inv.item_id))
+      .reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+
+    if (alreadyAddedQty >= availableStock) {
+      setScanFeedback({
+        type: "error",
+        text: `⚠️ Cannot add more: all available stock (${availableStock} pcs) of "${inv.item_name}" is already in this bill.`,
+      });
+      return;
+    }
+
     const rate = rateFor(inv.metal_type, inv.purity_display);
-    setRows([...rows, {
+    setRows((prev) => [...prev, {
       item_id: inv.item_id, item_name: inv.item_name, item_code: inv.item_code, huid: inv.huid || "", category_name: inv.category_name,
       metal_type: inv.metal_type, purity_display: inv.purity_display, hsn: inv.hsn,
       quantity: 1,
@@ -118,11 +168,54 @@ export default function NewBill() {
       rate_per_gram: rate, making_charge: settings?.making_charge_default || 8, making_charge_type: settings?.making_charge_type_default || "percentage",
       hallmarking_charge: 0, discount: 0, gst_rate: (gstConfigs[0]?.gst_rate) || 3, _invId: inv.id, _stock: inv.quantity,
     }]);
-    setItemQ(""); setBarcodeQ("");
+    setItemQ("");
+    setBarcodeQ("");
+    setScanFeedback({ type: "success", text: `✓ Added: ${inv.item_name} (${inv.item_code || inv.barcode})` });
   };
 
+  const handleBarcodeScan = async (code) => {
+    const cleanCode = (code || "").trim();
+    if (!cleanCode) return;
+
+    let item = inventory.find((i) => i.barcode === cleanCode || i.item_code === cleanCode || i.huid === cleanCode);
+    if (!item) {
+      // Query backend if not in currently loaded 500 items
+      try {
+        let results = await base44.entities.InventoryItem.filter({ barcode: cleanCode, is_archived: false }, "-updated_date", 1);
+        if (!results || results.length === 0) {
+          results = await base44.entities.InventoryItem.filter({ item_code: cleanCode, is_archived: false }, "-updated_date", 1);
+        }
+        if (!results || results.length === 0) {
+          results = await base44.entities.InventoryItem.filter({ huid: cleanCode, is_archived: false }, "-updated_date", 1);
+        }
+        if (results && results.length > 0) {
+          item = results[0];
+          setInventory((prev) => [item, ...prev.filter((x) => x.id !== item.id)]);
+        }
+      } catch (err) {
+        console.error("Backend barcode lookup error in billing:", err);
+      }
+    }
+
+    if (!item) {
+      setScanFeedback({ type: "error", text: `⚠️ Barcode "${cleanCode}" not found in inventory` });
+      return;
+    }
+
+    if (Number(item.quantity) <= 0) {
+      setScanFeedback({ type: "error", text: `⚠️ Item "${item.item_name}" is out of stock` });
+      return;
+    }
+
+    addItem(item);
+  };
+
+  useUsbScanner((code) => {
+    handleBarcodeScan(code);
+  });
+
   const addManualRow = () => {
-    setRows([...rows, {
+    setRows((prev) => [...prev, {
       item_name: "", item_code: "", category_name: "", metal_type: "gold", purity_display: "", hsn: "",
       quantity: 1, gross_weight: 0, stone_weight: 0, net_weight: 0, wastage: 0, wastage_type: "percentage", purity_value: 0,
       rate_per_gram: rateFor("gold", ""), making_charge: settings?.making_charge_default || 8,
@@ -131,8 +224,8 @@ export default function NewBill() {
     }]);
   };
 
-  const updateRow = (i, field, val) => setRows(rows.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
-  const removeRow = (i) => setRows(rows.filter((_, idx) => idx !== i));
+  const updateRow = (i, field, val) => setRows((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
+  const removeRow = (i) => setRows((prev) => prev.filter((_, idx) => idx !== i));
 
   const calc = useMemo(() => calcBill(rows, Number(billDiscount) || 0, gstConfigs[0], { gst_enabled: gstEnabled, gst_mode: gstMode, other_charges: Number(otherCharges) || 0 }), [rows, billDiscount, gstConfigs, gstEnabled, gstMode, otherCharges]);
 
@@ -182,7 +275,68 @@ export default function NewBill() {
     setNewCustOpen(false);
   };
 
+  const [rateDateError, setRateDateError] = useState(null);
+
+  const handleBillDateChange = async (newDate) => {
+    setBillDate(newDate);
+    setRateDateError(null);
+    try {
+      const rateRes = await base44.functions.invoke("getEffectiveRates", { date: newDate });
+      if (rateRes.data?.error || !rateRes.data?.success) {
+        setRateDateError(rateRes.data?.error || "No rate is configured for the selected date.");
+        setEffectiveRateInfo(null);
+        return;
+      }
+      if (rateRes.data?.rates) {
+        const newRates = rateRes.data.rates;
+        setRates(newRates);
+        setEffectiveRateInfo({
+          date: rateRes.data.query_date,
+          gold24k: rateRes.data.gold_24k_rate,
+          silver: rateRes.data.silver_rate,
+          effectiveDate: rateRes.data.gold_effective_date,
+        });
+
+        // Update rows with new effective rates if not custom override
+        if (!customRateOverride) {
+          setRows((prevRows) => prevRows.map((row) => {
+            const r = newRates.find((rt) => rt.metal_type === row.metal_type && (!row.purity_display || rt.purity_display === row.purity_display) && rt.is_active);
+            return r ? { ...row, rate_per_gram: Number(r.rate_per_gram) } : row;
+          }));
+        }
+
+        // Update oldGold rate if purity selected
+        if (oldGold.purity) {
+          const matchingRate = newRates.find((r) => r.metal_type === (oldGold.metal || "gold") && (r.purity_display === oldGold.purity || r.purity_name === oldGold.purity));
+          if (matchingRate) {
+            setOldGold((prev) => ({ ...prev, ratePerGram: Number(matchingRate.rate_per_gram) }));
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load effective rates for date:", err);
+      setRateDateError(err.response?.data?.error || err.message || "No rate is configured for the selected date.");
+      setEffectiveRateInfo(null);
+    }
+  };
+
+  const handleRateOverrideToggle = (checked) => {
+    if (checked && !canOverrideRate) {
+      alert("Permission denied: Only authorized administrators can override rates.");
+      return;
+    }
+    setCustomRateOverride(checked);
+  };
+
   const finalize = async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      alert("Financial Safety Lock Active: Cannot finalize bill while offline. Live database connection required to prevent duplicate invoices.");
+      return;
+    }
+    if (rateDateError && !customRateOverride) {
+      alert(`Cannot finalize bill: ${rateDateError} Please select an active rate date or enable Custom Rate Override.`);
+      return;
+    }
     if (!customerId) { alert(t("billing.selectCustomer")); return; }
     if (rows.length === 0) { alert(t("billing.addAtLeastOne")); return; }
     if (mode === "inventory") {
@@ -199,17 +353,35 @@ export default function NewBill() {
     if (computedPaid > calc.totalAmount) {
       alert(t("billing.overpayWarning")); return;
     }
-    if (useOldGold) {
+    const isGoldExchangeActive = useOldGold || selectedPaymentMode === "gold_exchange" || selectedPaymentMode === "old_gold_cash";
+    if (isGoldExchangeActive) {
       const gw = Number(oldGold.grossWeight);
       const dw = Number(oldGold.deductionWeight);
       const rt = Number(oldGold.ratePerGram);
-      if (gw <= 0) { alert(t("billing.oldGoldErrGross")); return; }
-      if (dw < 0) { alert(t("billing.oldGoldErrDeductionNeg")); return; }
-      if (dw > gw) { alert(t("billing.oldGoldErrDeductionExceed")); return; }
-      if (rt <= 0) { alert(t("billing.oldGoldErrRate")); return; }
+      if (gw <= 0) { alert(t("billing.oldGoldErrGross") || "Gross weight must be greater than zero"); return; }
+      if (dw < 0) { alert(t("billing.oldGoldErrDeductionNeg") || "Less weight cannot be negative"); return; }
+      if (dw > gw) { alert(t("billing.oldGoldErrDeductionExceed") || "Less weight cannot exceed gross weight"); return; }
+      if (rt <= 0) { alert(t("billing.oldGoldErrRate") || "Rate per gram must be greater than zero"); return; }
     }
     setSaving(true);
     const operationId = `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const goldExchangePayload = isGoldExchangeActive ? {
+      item_type: oldGold.item || "Customer Gold Exchange",
+      item: oldGold.item || "Customer Gold Exchange",
+      metal: oldGold.metal || "gold",
+      purity: oldGold.purity,
+      purity_value: Number(oldGold.purityValue) || 0,
+      gross_weight: Number(oldGold.grossWeight) || 0,
+      less_weight: Number(oldGold.deductionWeight) || 0,
+      net_weight: Math.max(0, Number(oldGold.grossWeight) - (Number(oldGold.deductionWeight) || 0)),
+      fine_weight: (Math.max(0, Number(oldGold.grossWeight) - (Number(oldGold.deductionWeight) || 0)) * (Number(oldGold.purityValue) || 0)) / 100,
+      rate_per_gram: Number(oldGold.ratePerGram) || 0,
+      gold_value: Number(exchangeValue) || 0,
+      huid: oldGold.huid || "",
+      barcode: oldGold.barcode || "",
+      notes: oldGold.notes || "",
+    } : null;
+
     try {
       const res = await base44.functions.invoke("finalizeBill", {
         customer_id: customerId,
@@ -235,9 +407,10 @@ export default function NewBill() {
         aadhaar_number: aadhaarNumber,
         pan_number: panNumber,
         paid_amount: computedPaid,
-        payment_mode: paymentModeForBackend,
+        payment_mode: selectedPaymentMode || paymentModeForBackend,
         payment_components: paymentComponentsForBackend,
         payment_details: paymentDetailsStr,
+        gold_exchange: goldExchangePayload,
         notes: billNotes,
       });
       const result = res.data;
@@ -252,7 +425,7 @@ export default function NewBill() {
       setLastBill(fullBill);
       setLastBillItems(billItems);
       setRows([]); setCustomerId(""); setBillDiscount(0); setCustQ("");
-      setPayments([{ mode: "cash", amount: "" }]); setUseOldGold(false); setCreditDue(false);
+      setPayments([{ mode: "cash", amount: "" }]); setSelectedPaymentMode("cash"); setUseOldGold(false); setCreditDue(false);
       setPaymentRef(""); setOldGold({ item: "", metal: "gold", purity: "", grossWeight: 0, deductionWeight: 0, ratePerGram: 0 });
       setPaymentNotes(""); setCustomRateOverride(false); setOtherCharges(0);
       setAadhaarNumber(""); setPanNumber(""); setBillNotes("");
@@ -265,16 +438,27 @@ export default function NewBill() {
   if (!settings && inventory.length === 0 && customers.length === 0) return <Spinner />;
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-      <PageHeader title={t("billing.title")} subtitle={t("billing.subtitle")} />
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+      <PageHeader
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-800 border border-amber-500/20">
+            <Receipt className="w-3.5 h-3.5 text-amber-600" />
+            <span>Point of Sale Terminal</span>
+          </span>
+        }
+        title={t("billing.title")}
+        subtitle="Generate GST or non-GST jewellery tax invoices with barcode lookup, instant purity rates, stone deductions, and split settlements."
+      />
 
-      <Tabs value={mode} onValueChange={setMode} className="mb-4">
-        <TabsList className="grid grid-cols-3 w-full max-w-lg">
-          <TabsTrigger value="inventory" className="whitespace-normal sm:whitespace-nowrap">{t("billing.inventoryMode")}</TabsTrigger>
-          <TabsTrigger value="manual" className="whitespace-normal sm:whitespace-nowrap">{t("billing.manualMode")}</TabsTrigger>
-          <TabsTrigger value="customer_purchase" className="whitespace-normal sm:whitespace-nowrap">{t("billing.customerPurchaseMode")}</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="p-1 rounded-xl bg-card border border-border/80 shadow-2xs inline-block">
+        <Tabs value={mode} onValueChange={setMode}>
+          <TabsList className="grid grid-cols-3 w-full max-w-lg bg-muted/60">
+            <TabsTrigger value="inventory" className="text-xs font-semibold">{t("billing.inventoryMode")}</TabsTrigger>
+            <TabsTrigger value="manual" className="text-xs font-semibold">{t("billing.manualMode")}</TabsTrigger>
+            <TabsTrigger value="customer_purchase" className="text-xs font-semibold">{t("billing.customerPurchaseMode")}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">
@@ -315,11 +499,31 @@ export default function NewBill() {
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Scan className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input value={barcodeQ} onChange={(e) => setBarcodeQ(e.target.value)} placeholder={t("billing.searchBarcode")} className="pl-9" />
+                    <Input
+                      value={barcodeQ}
+                      onChange={(e) => setBarcodeQ(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && barcodeQ.trim()) {
+                          e.preventDefault();
+                          handleBarcodeScan(barcodeQ.trim());
+                        }
+                      }}
+                      placeholder={t("billing.searchBarcode")}
+                      className="pl-9"
+                      data-barcode-input="true"
+                    />
                   </div>
                   <BarcodeScanner inventory={inventory} onAddItem={addItem} />
                 </div>
               </div>
+              {scanFeedback && (
+                <div className={`p-2 rounded-lg text-xs font-medium flex items-center justify-between gap-2 mb-2 ${
+                  scanFeedback.type === "success" ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-red-50 text-red-800 border border-red-200"
+                }`}>
+                  <span>{scanFeedback.text}</span>
+                  <button onClick={() => setScanFeedback(null)} className="opacity-70 hover:opacity-100 text-xs font-bold">✕</button>
+                </div>
+              )}
               {itemQ && (
                 <div className="mt-2 border rounded-lg divide-y max-h-56 overflow-y-auto">
                   {itemMatches.length === 0 ? <p className="px-3 py-2 text-sm text-muted-foreground">{t("billing.noInStockMatch")}</p> :
@@ -461,18 +665,46 @@ export default function NewBill() {
               </Badge>
             </div>
             {/* Custom bill date + rate override */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
               <div>
                 <Label className="text-xs">{t("billing.billDate")}</Label>
-                <Input type="date" className="h-8 text-xs" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
+                <Input type="date" className="h-8 text-xs" value={billDate} onChange={(e) => handleBillDateChange(e.target.value)} />
               </div>
               <div className="flex items-end pb-1">
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                  <input type="checkbox" checked={customRateOverride} onChange={(e) => setCustomRateOverride(e.target.checked)} className="rounded border-input" />
+                  <input type="checkbox" checked={customRateOverride} onChange={(e) => handleRateOverrideToggle(e.target.checked)} className="rounded border-input" />
                   {t("billing.customRateOverride")}
                 </label>
               </div>
             </div>
+            {rateDateError && (
+              <div className="text-[11px] p-2.5 bg-red-50 rounded-lg border border-red-200 text-red-800 mb-3 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                <div>
+                  <span className="font-semibold block">{rateDateError}</span>
+                  <span className="text-[10px] text-red-700">Please select an active rate date or enable Custom Rate Override.</span>
+                </div>
+              </div>
+            )}
+            {effectiveRateInfo && (
+              <div className="text-[11px] p-2 bg-amber-500/10 rounded-lg border border-amber-500/20 text-amber-900 mb-3">
+                <div className="flex items-center justify-between font-medium">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-amber-700" />
+                    <span>Rates for Bill Date ({billDate}):</span>
+                  </span>
+                  <span className="text-[10px] text-amber-700 font-semibold bg-amber-500/20 px-1.5 py-0.5 rounded">Auto Snapshot</span>
+                </div>
+                <div className="text-[10px] mt-1 text-amber-800 flex flex-wrap gap-x-2">
+                  <span>Gold 24K: <strong>₹{effectiveRateInfo.gold24k ? Number(effectiveRateInfo.gold24k).toLocaleString("en-IN") : "—"}/g</strong></span>
+                  <span>·</span>
+                  <span>Silver: <strong>₹{effectiveRateInfo.silver ? Number(effectiveRateInfo.silver).toLocaleString("en-IN") : "—"}/g</strong></span>
+                  {effectiveRateInfo.effectiveDate && (
+                    <span className="text-muted-foreground">(active since {new Date(effectiveRateInfo.effectiveDate).toLocaleDateString()})</span>
+                  )}
+                </div>
+              </div>
+            )}
             {customRateOverride && (
               <p className="text-[10px] text-amber-700 mb-2 -mt-1">{t("billing.customRateHint")}</p>
             )}
@@ -535,6 +767,11 @@ export default function NewBill() {
                 useOldGold={useOldGold} setUseOldGold={setUseOldGold}
                 creditDue={creditDue} setCreditDue={setCreditDue}
                 notes={paymentNotes} setNotes={setPaymentNotes}
+                purities={purities}
+                rates={rates}
+                selectedPaymentMode={selectedPaymentMode}
+                setSelectedPaymentMode={setSelectedPaymentMode}
+                canOverrideRate={canOverrideRate}
               />
             </div>
             <div className="mt-4">

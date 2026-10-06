@@ -58,6 +58,10 @@ export default function PurchaseStockWorkspace({ onDone }) {
   };
 
   const finalize = async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      alert("Financial Safety Lock Active: Cannot record stock inward while offline. Live database connection required to prevent inventory discrepancies.");
+      return;
+    }
     if (draftItems.length === 0) { alert(t("purchase.addAtLeastOne")); return; }
     for (const r of draftItems) {
       if (!r.inventory_id) { alert(`${r.item_name}: ${t("purchase.noInventoryItem")}`); return; }

@@ -1,7 +1,7 @@
 // Deep Verification Test Suite for JewelCore ERP Migration
 import http from 'http';
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = process.env.TEST_BASE_URL || 'http://127.0.0.1:3001';
 
 async function fetchJson(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
@@ -22,11 +22,12 @@ async function runDeepVerification() {
 
   // Auto-start backend if not currently running
   try {
-    await fetch(`${BASE_URL}/api/health`);
+    const res = await fetch(`${BASE_URL}/api/health`);
+    if (!res.ok) throw new Error('Not healthy');
   } catch (e) {
     console.log('⚡ Backend server not active on port 3001, auto-starting server in-process...');
     await import('./server.js');
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 40; i++) {
       try {
         const res = await fetch(`${BASE_URL}/api/health`);
         if (res.ok) break;

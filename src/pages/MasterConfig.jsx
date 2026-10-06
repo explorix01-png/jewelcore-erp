@@ -20,14 +20,25 @@ import { useDebounced } from "@/hooks/useDebounced";
 export default function MasterConfig() {
   const t = useT();
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-      <PageHeader title={t("master.title")} subtitle={t("master.subtitle")} />
-      <Tabs defaultValue="purity">
-        <TabsList className="grid grid-cols-3 w-full max-w-md mb-4">
-          <TabsTrigger value="purity">{t("master.purity")}</TabsTrigger>
-          <TabsTrigger value="category">{t("master.categories")}</TabsTrigger>
-          <TabsTrigger value="gst">{t("master.gst")}</TabsTrigger>
-        </TabsList>
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+      <PageHeader
+        badge={
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-800 border border-amber-500/20">
+            <span>Enterprise Catalog Settings</span>
+          </span>
+        }
+        title={t("master.title")}
+        subtitle="Configure hallmarking purity standards, jewellery categories, and HSN tax classifications."
+      />
+
+      <Tabs defaultValue="purity" className="space-y-4">
+        <div className="p-1 rounded-xl bg-card border border-border/80 shadow-2xs inline-block">
+          <TabsList className="grid grid-cols-3 w-full max-w-md bg-muted/60">
+            <TabsTrigger value="purity" className="text-xs font-semibold">{t("master.purity")}</TabsTrigger>
+            <TabsTrigger value="category" className="text-xs font-semibold">{t("master.categories")}</TabsTrigger>
+            <TabsTrigger value="gst" className="text-xs font-semibold">{t("master.gst")}</TabsTrigger>
+          </TabsList>
+        </div>
         <TabsContent value="purity"><PurityTab /></TabsContent>
         <TabsContent value="category"><CategoryTab /></TabsContent>
         <TabsContent value="gst"><GSTTab /></TabsContent>

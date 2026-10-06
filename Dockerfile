@@ -36,8 +36,10 @@ COPY --from=builder /app/dist ./dist
 COPY server ./server
 COPY uploads ./uploads
 
-# Ensure uploads directory exists with write permissions
-RUN mkdir -p /app/uploads && chmod 755 /app/uploads
+# Ensure uploads and server data directories exist with write permissions for non-root node user
+RUN mkdir -p /app/uploads /app/server/data && chown -R node:node /app
+
+USER node
 
 EXPOSE 3001
 

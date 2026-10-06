@@ -1,0 +1,11 @@
+environment              = "staging"
+aws_region               = "ap-south-1"
+vpc_cidr                 = "10.20.0.0/16"
+app_count                = 2
+ecs_cpu                  = 512
+ecs_memory               = 1024
+db_instance_class        = "db.t4g.micro"
+db_allocated_storage     = 20
+db_multi_az              = false
+db_deletion_protection   = true
+backup_retention_days    = 7

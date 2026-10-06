@@ -122,9 +122,12 @@ export default async function(req) {
     const gstEnabled = body.gst_enabled === true;
     const gstMode = ['intra', 'inter', 'none'].includes(str(body.gst_mode)) ? str(body.gst_mode) : 'none';
     const otherCharges = num(body.other_charges);
-    // When false, this is a Purchase Management record only — no inventory stock-in.
-    // Default true for backward compatibility with existing Add Purchase workflow.
-    const updateInventory = body.update_inventory !== false;
+    // Standalone Purchase Management: Purchase records are completely separated from Inventory.
+    // Purchase finalization MUST NOT automatically modify inventory unless explicitly specified.
+    const updateInventory = body.update_inventory === true;
+    const goldSettlementData = body.gold_settlement
+      ? (typeof body.gold_settlement === 'string' ? JSON.parse(body.gold_settlement) : body.gold_settlement)
+      : null;
 
     // --- IDEMPOTENCY CHECK ---
     const existing = await base44.asServiceRole.entities.Purchase.filter(
@@ -208,6 +211,8 @@ export default async function(req) {
           total_amount: totalAmount, paid_amount: paidAmount, due_amount: due,
           payment_mode: paymentMode, payment_details: str(body.payment_details), payment_components: paymentComponentsStr,
           rate_snapshot: rateSnapshot,
+          gold_settlement: goldSettlementData ? JSON.stringify(goldSettlementData) : null,
+          metal_settlement_value: goldSettlementData ? num(goldSettlementData.settlement_value) : 0,
           operation_id: operationId, notes, status: 'finalized',
         });
 
@@ -270,6 +275,35 @@ export default async function(req) {
           }
         }
 
+        // Record gold/metal settlement transaction if gold was used as payment/settlement
+        if (goldSettlementData && num(goldSettlementData.settlement_value) > 0) {
+          const settlementNum = `SETTLE-${Date.now().toString().slice(-6)}`;
+          await txBase44.asServiceRole.entities.ExchangeTransaction.create({
+            exchange_number: settlementNum,
+            transaction_type: 'PURCHASE_GOLD_SETTLEMENT',
+            reference_type: 'purchase',
+            reference_id: purchase.id,
+            original_bill_id: purchase.id,
+            original_bill_number: purchaseNumber,
+            supplier_id: supplierId,
+            supplier_name: supplier.name,
+            direction: 'GIVEN_AS_SETTLEMENT',
+            metal_type: str(goldSettlementData.metal_type || 'gold'),
+            purity: str(goldSettlementData.purity_display || '22K'),
+            purity_value: num(goldSettlementData.purity_value),
+            gross_weight: num(goldSettlementData.gross_weight),
+            net_weight: num(goldSettlementData.net_weight),
+            fine_weight: num(goldSettlementData.fine_weight) || calcFineWeight(num(goldSettlementData.net_weight), num(goldSettlementData.purity_value)),
+            rate_per_gram: num(goldSettlementData.rate_per_gram),
+            exchange_value: num(goldSettlementData.settlement_value),
+            settlement_value: num(goldSettlementData.settlement_value),
+            exchange_date: purchaseDate,
+            user_name: user.full_name || user.email || '',
+            operation_id: operationId,
+            notes: str(goldSettlementData.notes || `Gold settlement for purchase ${purchaseNumber}: ${goldSettlementData.net_weight}g @ ${goldSettlementData.purity_display}`),
+          });
+        }
+
         await txBase44.asServiceRole.entities.SupplierTransaction.create({
           supplier_id: supplierId, supplier_name: supplier.name, transaction_type: 'purchase',
           reference_type: 'purchase', reference_id: purchase.id, amount: totalAmount, date: new Date().toISOString(),
@@ -319,7 +353,10 @@ async function reapplyPurchase(base44, user, ctx, purchase, body) {
   const gstEnabled = body.gst_enabled === true;
   const gstMode = ['intra', 'inter', 'none'].includes(str(body.gst_mode)) ? str(body.gst_mode) : 'none';
   const otherCharges = num(body.other_charges);
-  const updateInventory = body.update_inventory !== false;
+  const updateInventory = body.update_inventory === true;
+  const goldSettlementData = body.gold_settlement
+    ? (typeof body.gold_settlement === 'string' ? JSON.parse(body.gold_settlement) : body.gold_settlement)
+    : null;
 
   if (items.length === 0) return Response.json({ error: 'At least one item is required' }, { status: 400 });
   const supplier = await base44.asServiceRole.entities.Supplier.get(supplierId).catch(() => null);
@@ -481,6 +518,8 @@ export async function deletePurchaseCascade(base44, purchaseId, user, ctx) {
   await base44.asServiceRole.entities.InventoryTransaction.deleteMany({ reference_type: 'purchase', reference_id: purchaseId }).catch(() => {});
   await base44.asServiceRole.entities.SupplierTransaction.deleteMany({ reference_type: 'purchase', reference_id: purchaseId }).catch(() => {});
   await base44.asServiceRole.entities.PurchaseItem.deleteMany({ purchase_id: purchaseId }).catch(() => {});
+  await base44.asServiceRole.entities.ExchangeTransaction.deleteMany({ reference_type: 'purchase', reference_id: purchaseId }).catch(() => {});
+  await base44.asServiceRole.entities.ExchangeTransaction.deleteMany({ original_bill_id: purchaseId }).catch(() => {});
 
   // Update supplier outstanding
   if (purchase.supplier_id && num(purchase.total_amount) > 0) {

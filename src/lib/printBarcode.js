@@ -1,202 +1,583 @@
-import { encode128b } from "@/lib/code128";
+import { encode128b } from "./code128.js";
+import QRCode from "qrcode";
 
-// Prints a FOLD-OVER jewellery barcode tag as a SINGLE PDF page with EXACT mm dimensions.
-// The physical stock is TWO 20mm × 20mm sections placed SIDE-BY-SIDE.
-// Unfolded physical label: 40mm wide × 20mm high (landscape).
-// Fold line: vertical at X = 20mm (internal reference only — NOT printed on production label).
+// Prints a jewellery barcode tag calibrated for TSC TE244 matching Image 1 specification.
+// Primary content box: 45mm wide × 20mm high (landscape).
+// Divided into TWO COLUMNS / PANELS separated by a dashed divider:
+//   - LEFT / FRONT PANEL (22.5mm × 20mm): Shop Name, Item Name, Machine-Readable Barcode (Code128 / QR), Purity, HUID
+//   - RIGHT / BACK PANEL (22.5mm × 20mm): GW, LW, NW, Fine Weight, Item Code
 //
-// Layout (one horizontal strip, landscape):
-//   0 mm         20 mm         40 mm
-//   |  FRONT PANEL | BACK PANEL  |
-//   | shop/item/code| item details|
-//   |  (20 × 20mm)  | (20 × 20mm) |
-//
-// Front panel (X 0–20mm): shop name, item name, Code128 or QR code, identifier value
-// Back  panel (X 20–40mm): item name, HUID, code, GW, LW, NW, Purity, Fine
-//
-// After folding at the vertical 20mm center, final folded tag = 20mm × 20mm.
-//
-// All applicable Barcode Settings flow through to the physical PDF output:
-//   - barcode_type        → code128 or qr
-//   - barcode_width       → bar module width (setting × 0.1mm, capped to fit panel)
-//   - barcode_height      → barcode height in mm (setting / 3.78, capped to fit panel)
-//   - barcode_font_size   → text font size in pt (capped to fit panel)
-//
-// Opens the PDF with auto-print enabled for direct TSC TE244 printing.
-export async function printBarcodeLabel(item, settings) {
-  if (!item || !item.barcode) {
-    alert("No barcode to print.");
-    return;
+// Carrier / Paper Roll (Image 1 "page - 9.5 cm"):
+//   Total roll liner width: 95mm.
+//   Tag stock has a 45mm tail on the left and a 45mm tag body on the right (total label: 90mm = "9 cm").
+//   When roll is loaded with narrow tail on left:
+//     Tail offset (offsetX) = 48mm (or 50mm) positions the 45mm × 20mm tag body squarely on the printable flap.
+//   When tag stock is standard or flaps-first:
+//     offsetX = 0mm prints directly at the left edge.
+
+const esc = (s) => String(s || "").trim();
+
+/**
+ * Generate a standalone SVG barcode string (Code 128 or QR) sized for the front panel.
+ * Code 128 uses crisp vector rects with exact integer modules for 203 DPI thermal heads.
+ */
+export async function generateBarcodeSvg(barcodeValue, barcodeType = "code128") {
+  if (!barcodeValue) return "";
+
+  if (barcodeType === "qr") {
+    try {
+      const qrSvg = await QRCode.toString(barcodeValue, {
+        type: "svg",
+        margin: 1,
+        errorCorrectionLevel: "M",
+        width: 80,
+      });
+      return qrSvg;
+    } catch (e) {
+      console.error("QR Code generation error:", e);
+      return "";
+    }
+  }
+
+  // Code 128B
+  try {
+    const patterns = encode128b(barcodeValue);
+    let totalModules = 20; // 10 quiet modules each side
+    patterns.forEach((p) => {
+      totalModules += p.split("").reduce((a, b) => a + (+b), 0);
+    });
+
+    const svgHeight = 40;
+    let x = 10;
+    let bars = "";
+
+    patterns.forEach((p) => {
+      p.split("").forEach((d, i) => {
+        const w = +d;
+        if (i % 2 === 0) {
+          bars += `<rect x="${x}" y="0" width="${w}" height="${svgHeight}" fill="#000000"/>`;
+        }
+        x += w;
+      });
+    });
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalModules} ${svgHeight}" width="100%" height="100%" preserveAspectRatio="none" shape-rendering="crispEdges">${bars}</svg>`;
+  } catch (e) {
+    console.error("Code128 SVG generation error:", e);
+    return "";
+  }
+}
+
+/**
+ * Builds the complete print HTML document calibrated for TSC TE244 matching Image 1 (45mm × 20mm).
+ * Accommodates roll tail offset (e.g. +48mm for 95mm carrier roll dumbbell stock).
+ */
+export async function generateLabelHtml(item, settings, copies = 1, options = {}) {
+  const barcodeType = settings?.barcode_type || "code128";
+  const shopName = esc(settings?.shop_name || "");
+  const itemName = esc(item.item_name || "Jewellery Item");
+  const barcodeValue = esc(item.barcode || item.item_code || "");
+  const huid = esc(item.huid || "—");
+  const itemCode = esc(item.item_code || "—");
+  const purity = esc(item.purity_display || item.purity || "—");
+  const gw = `${Number(item.gross_weight || 0).toFixed(3)}g`;
+  const lw = `${Number(item.stone_weight ?? item.less_weight ?? 0).toFixed(3)}g`;
+  const nw = `${Number(item.net_weight || 0).toFixed(3)}g`;
+  const fine = `${Number(item.fine_weight || 0).toFixed(3)}g`;
+
+  const barcodeSvg = await generateBarcodeSvg(barcodeValue, barcodeType);
+  const numCopies = Math.max(1, parseInt(copies, 10) || 1);
+
+  // Label geometry:
+  // Primary target from Image 1: Content box 45mm × 20mm (two 22.5mm columns).
+  // Backward compatibility: If label width is explicitly 40, uses 40mm × 20mm (two 20mm columns).
+  const labelWidth = Number(options?.labelWidth ?? settings?.barcode_label_width ?? 45);
+  const labelHeight = Number(options?.labelHeight ?? settings?.barcode_label_height ?? 20);
+  const panelWidth = (labelWidth / 2).toFixed(1);
+
+  const offsetX = Math.max(0, Number(options?.offsetX ?? settings?.barcode_offset_x ?? 0));
+
+  // Total carrier page width for TSC TE244 printer:
+  // When offsetX > 0 (dumbbell roll on 95mm carrier), total page width is 95mm.
+  // When offsetX === 0 (flaps first / standard label), page width matches labelWidth.
+  const totalWidthMm = options?.pageWidth
+    ? Number(options.pageWidth).toFixed(1)
+    : (offsetX > 0 ? Math.max(95, offsetX + labelWidth).toFixed(1) : labelWidth.toFixed(1));
+
+  let pagesHtml = "";
+  for (let c = 0; c < numCopies; c++) {
+    pagesHtml += `
+      <div class="label-page">
+        ${offsetX > 0 ? `<div class="tail-spacer" style="width: ${offsetX}mm; height: ${labelHeight}mm; flex-shrink: 0;"></div>` : ""}
+
+        <!-- 45mm × 20mm TAG BODY (Image 1 Specification) -->
+        <div class="tag-body" style="width: ${labelWidth}mm; height: ${labelHeight}mm; flex-shrink: 0;">
+          <!-- LEFT / FRONT PANEL (Identification, Barcode, Purity, HUID) -->
+          <div class="panel front-panel">
+            <div class="header-group">
+              ${shopName ? `<div class="shop-name">${shopName}</div>` : ""}
+              <div class="item-name">${itemName}</div>
+            </div>
+            <div class="barcode-container ${barcodeType === "qr" ? "qr-mode" : ""}">
+              ${barcodeSvg}
+            </div>
+            <div class="meta-group">
+              <div class="meta-row">
+                <span class="meta-lbl">Purity</span>
+                <span class="meta-val font-bold">${purity}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-lbl">HUID</span>
+                <span class="meta-val mono font-bold">${huid}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT / BACK PANEL (GW, LW, NW, Fine, Item Code) -->
+          <div class="panel back-panel">
+            <table class="spec-table">
+              <tr><td class="spec-lbl">GW</td><td class="spec-val">${gw}</td></tr>
+              <tr><td class="spec-lbl">LW</td><td class="spec-val">${lw}</td></tr>
+              <tr><td class="spec-lbl">NW</td><td class="spec-val font-bold">${nw}</td></tr>
+              <tr><td class="spec-lbl">Fine</td><td class="spec-val">${fine}</td></tr>
+              <tr><td class="spec-lbl">Code</td><td class="spec-val mono font-bold">${itemCode}</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>JewelCore ERP — Label (${barcodeValue})</title>
+  <style>
+    /* Exact physical size calibrated for TSC TE244 — 45mm x 20mm tag (95mm roll carrier) */
+    @page {
+      size: ${totalWidthMm}mm ${labelHeight}mm;
+      margin: 0;
+    }
+    @media print {
+      html, body {
+        width: ${totalWidthMm}mm;
+        height: ${labelHeight}mm;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        background: #ffffff !important;
+      }
+      .label-page {
+        page-break-after: always;
+        page-break-inside: avoid;
+        break-after: page;
+      }
+      .label-page:last-child {
+        page-break-after: auto;
+        break-after: auto;
+      }
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #ffffff;
+      color: #000000;
+    }
+    .label-page {
+      width: ${totalWidthMm}mm;
+      height: ${labelHeight}mm;
+      display: flex;
+      flex-direction: row;
+      overflow: hidden;
+      background: #ffffff;
+      position: relative;
+    }
+    .tag-body {
+      width: ${labelWidth}mm;
+      height: ${labelHeight}mm;
+      display: flex;
+      flex-direction: row;
+      overflow: hidden;
+      background: #ffffff;
+      position: relative;
+    }
+    .panel {
+      width: ${panelWidth}mm;
+      height: ${labelHeight}mm;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+    .front-panel {
+      padding: 0.6mm 1.2mm 0.6mm 0.8mm;
+      border-right: 0.5px dashed #000000;
+      justify-content: space-between;
+      align-items: stretch;
+      text-align: left;
+    }
+    .header-group {
+      width: 100%;
+      overflow: hidden;
+    }
+    .shop-name {
+      font-size: 4.2pt;
+      font-weight: 800;
+      line-height: 1.05;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+      color: #000000;
+    }
+    .item-name {
+      font-size: 5.2pt;
+      font-weight: 700;
+      line-height: 1.1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #000000;
+      margin-top: 0.2mm;
+    }
+    .barcode-container {
+      width: 100%;
+      height: 6.8mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      margin: 0.2mm 0;
+    }
+    .barcode-container.qr-mode {
+      height: 8.5mm;
+    }
+    .barcode-container svg {
+      width: 100%;
+      height: 100%;
+      max-height: 100%;
+      display: block;
+    }
+    .meta-group {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2mm;
+    }
+    .meta-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      font-size: 4.8pt;
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .meta-lbl {
+      font-weight: 700;
+      color: #222222;
+      font-size: 4.5pt;
+    }
+    .meta-val {
+      color: #000000;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: right;
+    }
+    .back-panel {
+      padding: 0.6mm 0.8mm 0.6mm 1.2mm;
+      justify-content: center;
+    }
+    .spec-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    .spec-table tr {
+      height: 3.2mm;
+    }
+    .spec-table td {
+      padding: 0;
+      line-height: 1.1;
+      vertical-align: middle;
+    }
+    .spec-lbl {
+      font-size: 4.6pt;
+      font-weight: 700;
+      color: #000000;
+      width: 6.8mm;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .spec-val {
+      font-size: 4.8pt;
+      font-weight: 500;
+      color: #000000;
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 13.5mm;
+    }
+    .font-bold {
+      font-weight: 700;
+    }
+    .font-semibold {
+      font-weight: 700;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+      font-size: 4.5pt;
+    }
+  </style>
+</head>
+<body>
+  ${pagesHtml}
+</body>
+</html>`;
+}
+
+/**
+ * Triggers the browser/Windows print dialog for TSC TE244 via an isolated zero-margin iframe.
+ */
+export async function printLabelDirect(item, settings, copies = 1, options = {}) {
+  if (!item || (!item.barcode && !item.item_code)) {
+    alert("No barcode or item code available to print.");
+    return false;
   }
 
   try {
-    const { jsPDF } = await import("jspdf");
+    const offsetX = Math.max(0, Number(options?.offsetX ?? settings?.barcode_offset_x ?? 0));
+    const labelWidth = Number(options?.labelWidth ?? settings?.barcode_label_width ?? 45);
+    const labelHeight = Number(options?.labelHeight ?? settings?.barcode_label_height ?? 20);
+    const totalWidthMm = options?.pageWidth
+      ? Number(options.pageWidth).toFixed(1)
+      : (offsetX > 0 ? Math.max(95, offsetX + labelWidth).toFixed(1) : labelWidth.toFixed(1));
 
-    // --- Physical label dimensions (mm) — FIXED 40 × 20mm landscape ---
-    // Two 20×20mm panels side-by-side. Fold at vertical center (X = 20mm).
-    const panelWidth = 20;   // each panel = 20mm wide
-    const panelHeight = 20;  // each panel = 20mm high
-    const pageWidth = panelWidth * 2;  // 40mm total
-    const pageHeight = panelHeight;    // 20mm total
-    const foldX = panelWidth;           // vertical fold at X = 20mm (internal, not printed)
+    const html = await generateLabelHtml(item, settings, copies, { ...options, offsetX, labelWidth, labelHeight, totalWidthMm });
 
-    // --- Barcode settings (all flow through to output) ---
-    const barcodeType = settings?.barcode_type || "code128";
-    const barWidthSetting = Number(settings?.barcode_width) || 2;   // 1-5 scale
-    const barcodeHeightSetting = Number(settings?.barcode_height) || 60; // px
-    const fontSetting = Number(settings?.barcode_font_size) || 14;  // pt
-
-    // Convert settings to physical mm values
-    // barWidthSetting × 0.1mm = module width (2 → 0.2mm, scannable at 203 DPI)
-    // barcodeHeightSetting / 3.78 px→mm (60 → ~15.9mm, fits 20mm panel)
-    const userModuleMm = barWidthSetting * 0.1;
-    const userBarcodeHeightMm = barcodeHeightSetting / 3.78;
-
-    // Create PDF with EXACT label dimensions in mm (landscape: width > height)
-    // format: [width, height] = [40, 20]. orientation: "landscape" ensures
-    // jsPDF keeps width > height (no swap since 40 > 20). The resulting PDF
-    // page is exactly 40mm wide × 20mm high with NO /Rotate attribute.
-    const doc = new jsPDF({
-      unit: "mm",
-      format: [pageWidth, pageHeight],
-      orientation: "landscape",
-      compress: true,
-    });
-
-    // Force the PDF viewer to print at ACTUAL SIZE (40×20mm) — no scaling,
-    // no "Fit to Page", no auto-rotate to A4/Letter. This prevents the
-    // browser's print dialog from scaling/rotating the small landscape page
-    // to fit a portrait sheet, which would produce a vertical strip.
-    doc.viewerPreferences({
-      PrintScaling: "None",
-      PickTrayByPDFSize: true,
-    });
-
-    const pw = doc.internal.pageSize.getWidth();   // = 40mm
-    const ph = doc.internal.pageSize.getHeight();  // = 20mm
-    const padding = 0.5; // mm — small safe margin inside panel boundaries
-
-    // Font sizes: use user setting, capped to fit the 20mm panel height
-    const maxShopPt = (panelHeight * 0.14) / 0.353;
-    const maxItemPt = (panelHeight * 0.11) / 0.353;
-    const maxMonoPt = (panelHeight * 0.10) / 0.353;
-    const maxBackPt = (panelHeight * 0.07) / 0.353; // ~18% smaller — item-details font reduction
-    const shopNamePt = Math.max(3, Math.min(fontSetting, maxShopPt));
-    const itemNamePt = Math.max(2.5, Math.min(fontSetting * 0.8, maxItemPt));
-    const monoPt = Math.max(2.5, Math.min(fontSetting * 0.7, maxMonoPt));
-    const backPt = Math.max(2.5, Math.min(fontSetting * 0.65, maxBackPt));
-
-    const esc = (s) => String(s || "");
-
-    // === FRONT PANEL (X: 0 to 20mm, Y: 0 to 20mm) ===
-    const contentShiftX = 2; // mm — shift entire content block right to use blank area
-    const frontCenterX = panelWidth / 2 + contentShiftX; // X = 12mm — shifted right
-    let y = padding;
-
-    // Shop name (top, centered within front panel, bold)
-    if (settings?.shop_name) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(shopNamePt);
-      doc.text(esc(settings.shop_name), frontCenterX, y + shopNamePt * 0.353 * 0.75, { align: "center" });
-      y += shopNamePt * 0.353 + 0.15;
+    // Remove any previous print iframe
+    const oldFrame = document.getElementById("jewelcore-barcode-print-frame");
+    if (oldFrame) {
+      document.body.removeChild(oldFrame);
     }
 
-    // Item name (centered within front panel)
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(itemNamePt);
-    doc.text(esc(item.item_name), frontCenterX, y + itemNamePt * 0.353 * 0.75, { align: "center" });
-    y += itemNamePt * 0.353 + 0.15;
+    const iframe = document.createElement("iframe");
+    iframe.id = "jewelcore-barcode-print-frame";
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = `${totalWidthMm}mm`;
+    iframe.style.height = `${labelHeight}mm`;
+    iframe.style.border = "none";
+    iframe.style.opacity = "0.001";
+    iframe.style.pointerEvents = "none";
+    iframe.style.zIndex = "-9999";
 
-    // Barcode or QR code — fits between current y and the value text at the bottom of front panel
-    const valueTextHeight = monoPt * 0.353 + 0.2;
-    const codeAreaTop = y;
-    const codeAreaBottom = pageHeight - padding - valueTextHeight;
-    const codeAreaHeight = Math.max(2, codeAreaBottom - codeAreaTop);
-    const codeAreaWidth = panelWidth - 2 * padding; // available width within front panel
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    // Allow iframe rendering and font settlement before opening print dialog
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+
+    // Clean up iframe after print dialog closes
+    setTimeout(() => {
+      if (iframe.parentNode) {
+        document.body.removeChild(iframe);
+      }
+    }, 60000);
+
+    return true;
+  } catch (e) {
+    console.error("Direct label print error:", e);
+    alert("Failed to initiate print: " + (e.message || e));
+    return false;
+  }
+}
+
+/**
+ * Generates a calibrated 45mm × 20mm PDF document using jsPDF matching Image 1.
+ */
+export async function generateBarcodePdf(item, settings, copies = 1, options = {}) {
+  if (!item || (!item.barcode && !item.item_code)) {
+    throw new Error("No barcode or item code available.");
+  }
+
+  const { jsPDF } = await import("jspdf");
+
+  const offsetX = Math.max(0, Number(options?.offsetX ?? settings?.barcode_offset_x ?? 0));
+  const labelWidth = Number(options?.labelWidth ?? settings?.barcode_label_width ?? 45);
+  const panelWidth = labelWidth / 2;
+  const panelHeight = Number(options?.labelHeight ?? settings?.barcode_label_height ?? 20);
+  const pageWidth = options?.pageWidth
+    ? Number(options.pageWidth)
+    : (offsetX > 0 ? Math.max(95, offsetX + labelWidth) : labelWidth);
+  const pageHeight = panelHeight;
+  const dividerX = offsetX + panelWidth;
+
+  const barcodeType = settings?.barcode_type || "code128";
+
+  const doc = new jsPDF({
+    unit: "mm",
+    format: [pageWidth, pageHeight],
+    orientation: "landscape",
+    compress: true,
+  });
+
+  doc.viewerPreferences({
+    PrintScaling: "None",
+    PickTrayByPDFSize: true,
+  });
+
+  const numCopies = Math.max(1, parseInt(copies, 10) || 1);
+
+  for (let pageIdx = 0; pageIdx < numCopies; pageIdx++) {
+    if (pageIdx > 0) {
+      doc.addPage([pageWidth, pageHeight], "landscape");
+    }
+
+    const padding = 0.6;
+    const shopName = esc(settings?.shop_name || "");
+    const itemName = esc(item.item_name || "Jewellery Item");
+    const barcodeValue = esc(item.barcode || item.item_code || "");
+    const huid = esc(item.huid || "—");
+    const itemCode = esc(item.item_code || "—");
+    const purity = esc(item.purity_display || item.purity || "—");
+    const gw = `${Number(item.gross_weight || 0).toFixed(3)}g`;
+    const lw = `${Number(item.stone_weight ?? item.less_weight ?? 0).toFixed(3)}g`;
+    const nw = `${Number(item.net_weight || 0).toFixed(3)}g`;
+    const fine = `${Number(item.fine_weight || 0).toFixed(3)}g`;
+
+    // === LEFT / FRONT PANEL (offsetX to offsetX + panelWidth) ===
+    let y = padding + 0.3;
+    const leftMargin = offsetX + padding + 0.2;
+    const leftWidth = panelWidth - padding * 2 - 0.4;
+
+    if (shopName) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(4.2);
+      doc.text(shopName, leftMargin, y + 1.1);
+      y += 1.8;
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(5.0);
+    doc.text(itemName, leftMargin, y + 1.4);
+    y += 2.2;
+
+    // Barcode area
+    const barcodeTop = y;
+    const barcodeHeight = 6.2;
+    const barcodeWidth = leftWidth;
 
     if (barcodeType === "qr") {
-      // QR code — square, centered within front panel code area
-      const QRModule = await import("qrcode");
-      const QRCode = QRModule.default || QRModule;
-      const qrSize = Math.min(codeAreaWidth, codeAreaHeight);
-      const qrX = frontCenterX - qrSize / 2;
-      const qrY = codeAreaTop + (codeAreaHeight - qrSize) / 2;
-      const dataUrl = await QRCode.toDataURL(item.barcode, { width: 300, margin: 1, errorCorrectionLevel: "M" });
-      doc.addImage(dataUrl, "PNG", qrX, qrY, qrSize, qrSize);
+      const qrSize = Math.min(barcodeWidth, 7.5);
+      const dataUrl = await QRCode.toDataURL(barcodeValue, { width: 300, margin: 1, errorCorrectionLevel: "M" });
+      doc.addImage(dataUrl, "PNG", leftMargin, barcodeTop, qrSize, qrSize);
+      y += qrSize + 0.8;
     } else {
-      // Code 128 barcode — bars drawn directly as PDF rectangles for crisp output
-      const patterns = encode128b(item.barcode);
-      let totalModules = 20; // 10-module quiet zone each side
-      patterns.forEach((p) => { totalModules += p.split("").reduce((a, b) => a + (+b), 0); });
+      const patterns = encode128b(barcodeValue);
+      let patternModules = 0;
+      patterns.forEach((p) => {
+        patternModules += p.split("").reduce((a, b) => a + (+b), 0);
+      });
+      const totalModules = patternModules + 20;
+      const moduleMm = barcodeWidth / totalModules;
 
-      // Module width: use user setting, capped to fit front panel width
-      const maxModuleMm = codeAreaWidth / totalModules;
-      const moduleMm = Math.min(userModuleMm, maxModuleMm);
-
-      // Barcode height: use user setting, capped to fit available height
-      const barcodeHeightMm = Math.min(userBarcodeHeightMm, codeAreaHeight);
-
-      // Center the barcode horizontally and vertically within the front panel code area
-      const barcodeWidth = totalModules * moduleMm;
-      const barcodeX = frontCenterX - barcodeWidth / 2 + 10 * moduleMm; // left quiet zone offset
-      const barcodeY = codeAreaTop + (codeAreaHeight - barcodeHeightMm) / 2;
-
-      let barX = barcodeX;
+      let barX = leftMargin + 10 * moduleMm;
       patterns.forEach((p) => {
         p.split("").forEach((d, i) => {
           const w = +d * moduleMm;
           if (i % 2 === 0) {
-            doc.rect(barX, barcodeY, w, barcodeHeightMm, "F"); // F = fill black
+            doc.rect(barX, barcodeTop, w, barcodeHeight, "F");
           }
           barX += w;
         });
       });
+      y += barcodeHeight + 0.5;
     }
 
-    // Barcode value (bottom of front panel, centered, monospace)
-    doc.setFont("courier", "normal");
-    doc.setFontSize(monoPt);
-    doc.text(esc(item.barcode), frontCenterX, pageHeight - padding, { align: "center" });
+    // Purity & HUID lines
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(4.6);
+    doc.text("Purity: " + purity, leftMargin, y + 1.2);
+    y += 2.0;
 
-    // === BACK PANEL (X: 20mm to 40mm, Y: 0 to 20mm) ===
-    const backItems = [
-      ["Item", esc(item.item_name) || "—"],
-      ["HUID", esc(item.huid) || "—"],
-      ["Code", esc(item.item_code) || "—"],
-      ["GW", `${Number(item.gross_weight || 0).toFixed(3)}g`],
-      ["LW", `${Number(item.stone_weight || 0).toFixed(3)}g`],
-      ["NW", `${Number(item.net_weight || 0).toFixed(3)}g`],
-      ["Purity", esc(item.purity_display) || "—"],
-      ["Fine", `${Number(item.fine_weight || 0).toFixed(3)}g`],
+    doc.setFont("courier", "bold");
+    doc.setFontSize(4.5);
+    doc.text("HUID: " + huid, leftMargin, y + 1.2);
+
+    // Dashed center divider line
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineDashPattern([0.5, 0.5], 0);
+    doc.setLineWidth(0.1);
+    doc.line(dividerX, padding, dividerX, pageHeight - padding);
+    doc.setLineDashPattern([], 0); // reset
+
+    // === RIGHT / BACK PANEL (dividerX to dividerX + panelWidth) ===
+    const rightMargin = dividerX + padding + 0.6;
+    const rightItems = [
+      ["GW", gw],
+      ["LW", lw],
+      ["NW", nw],
+      ["Fine", fine],
+      ["Code", itemCode],
     ];
 
-    const backAreaTop = padding;
-    const backAreaHeight = pageHeight - padding - backAreaTop;
-    const rowHeight = backAreaHeight / backItems.length;
-    const labelColX = foldX + padding + contentShiftX;                       // X = 22.5mm — shifted right
-    const valueColX = foldX + padding + panelWidth * 0.35 + contentShiftX;   // X ≈ 29.5mm — shifted right
+    const rightAreaTop = padding + 0.4;
+    const rightRowHeight = 3.2;
 
-    doc.setFontSize(backPt);
-    backItems.forEach((row, i) => {
-      const rowY = backAreaTop + i * rowHeight + backPt * 0.353 * 0.75;
+    doc.setFontSize(4.7);
+    rightItems.forEach((row, i) => {
+      const rowY = rightAreaTop + i * rightRowHeight + 1.8;
       doc.setFont("helvetica", "bold");
-      doc.text(row[0], labelColX, rowY);
-      doc.setFont("helvetica", "normal");
-      doc.text(row[1], valueColX, rowY);
+      doc.text(row[0], rightMargin, rowY);
+      doc.setFont(row[0] === "NW" || row[0] === "Code" ? "courier" : "helvetica", row[0] === "NW" || row[0] === "Code" ? "bold" : "normal");
+      doc.text(row[1], rightMargin + 6.8, rowY);
     });
-
-    // NOTE: The vertical fold line at X = 20mm is an internal reference only.
-    // It is NOT drawn on the production label (requirement #4).
-
-    // Download the PDF directly. The autoPrint action is embedded in the PDF,
-    // so when opened in any standards-compliant PDF viewer (Adobe Acrobat, etc.)
-    // it will trigger printing immediately at the correct 40×20mm size.
-    // This bypasses the browser's built-in PDF viewer, which may auto-rotate
-    // or scale the small landscape page to fit a portrait sheet.
-    doc.autoPrint();
-    doc.save(`barcode-${item.barcode}.pdf`);
-  } catch (e) {
-    console.error("Barcode print error:", e);
-    alert("Failed to generate barcode label: " + (e.message || e));
   }
+
+  return doc;
+}
+
+/**
+ * Downloads the calibrated 45mm × 20mm PDF directly.
+ */
+export async function downloadBarcodePdf(item, settings, copies = 1, options = {}) {
+  try {
+    const doc = await generateBarcodePdf(item, settings, copies, options);
+    const barcode = item.barcode || item.item_code || "label";
+    doc.save(`jewelcore-barcode-${barcode}.pdf`);
+    return true;
+  } catch (e) {
+    console.error("PDF download error:", e);
+    alert("Failed to download PDF: " + (e.message || e));
+    return false;
+  }
+}
+
+/**
+ * Default print handler for legacy callers: triggers direct label print.
+ */
+export async function printBarcodeLabel(item, settings, options = {}) {
+  return printLabelDirect(item, settings, 1, options);
 }
