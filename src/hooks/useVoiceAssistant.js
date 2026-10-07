@@ -281,7 +281,7 @@ export function useVoiceAssistant() {
         await base44.functions.invoke("manageSupplier", { action: "delete", id: c.matches[0].id });
         await say(t("voice.archived"));
       } else if (c.target === "bill" && c.bill_number) {
-        const bills = await base44.entities.Bill.filter({ bill_number: c.bill_number }, "-created_date", 1);
+        const bills = await base44.entities.Bill.filter({ bill_number: c.bill_number, is_deleted: { $ne: true } }, "-created_date", 1);
         if (bills[0]) { await base44.functions.invoke("cancelBill", { bill_id: bills[0].id, reason: "Voice assistant" }); await say(t("voice.cancelled")); }
         else await say(t("voice.billNotFound"));
       } else if (c.target === "stock") {

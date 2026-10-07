@@ -7,6 +7,8 @@ import { db } from '../db/database.js';
 import { createRateRepository } from '../repositories/rateRepository.js';
 import { resolveEffectiveRates, normalizeRateHistory, toRateSnapshot } from '../services/rateResolverService.js';
 import { checkPaymentBreakdown } from '../services/paymentComponentsService.js';
+import { createBillNumberRepository } from '../repositories/billNumberRepository.js';
+import { allocateBillNumber, BillNumberError } from '../services/billNumberService.js';
 
 // Finalize Bill — single-business server-side business action with IDEMPOTENCY.
 // All referenced records are validated. No tenant scoping — the app has one business.
@@ -228,16 +230,20 @@ export default async function(req) {
     const due = computeDue(calc.totalAmount, totalSettled);
     if (paidAmount > calc.totalAmount) return Response.json({ error: 'Paid amount exceeds total' }, { status: 400 });
 
-    // Bill number — from settings
-    const baseSeq = Number(settings.invoice_sequence) || 0;
-    let billNumber = '', usedSeq = baseSeq;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      usedSeq = baseSeq + 1 + attempt;
-      billNumber = `${settings.invoice_prefix || 'INV'}-${usedSeq.toString().padStart(5, '0')}`;
-      const coll = await base44.asServiceRole.entities.Bill.filter({ bill_number: billNumber }, '-created_date', 1);
-      if (coll.length === 0) break;
-      if (attempt === 4) return Response.json({ error: 'Bill number collision after 5 retries' }, { status: 409 });
+    // Bill number — the next automatic number (a deleted bill's number is free to reuse),
+    // or the one an administrator typed in. See services/billNumberService.js.
+    let allocated;
+    try {
+      allocated = await allocateBillNumber(createBillNumberRepository(base44), settings, {
+        requested: body.bill_number,
+        isAdmin: ctx.role === 'admin',
+      });
+    } catch (numberError) {
+      if (numberError instanceof BillNumberError) return Response.json({ error: numberError.message }, { status: numberError.status });
+      throw numberError;
     }
+    const billNumber = allocated.billNumber;
+    const usedSeq = allocated.sequence;
 
     // --- WRITE PHASE (ATOMIC POSTGRESQL TRANSACTION) ---
     const tokenBuf = new Uint8Array(16);
@@ -247,6 +253,11 @@ export default async function(req) {
     try {
       const txResult = await db.transaction(async (tx) => {
         const txBase44 = createClientFromRequest(req, { txClient: tx });
+
+        // Re-check inside the transaction so two bills saved at the same moment can't share a number.
+        if (await createBillNumberRepository(txBase44).findActiveBillByNumber(billNumber)) {
+          throw new BillNumberError(`Invoice number ${billNumber} is already used by another bill`, 409);
+        }
 
         const bill = await txBase44.asServiceRole.entities.Bill.create({
           bill_number: billNumber, customer_id: customerId, customer_name: customer.name,
@@ -369,6 +380,7 @@ export default async function(req) {
 
       return Response.json(txResult);
     } catch (writeError) {
+      if (writeError instanceof BillNumberError) return Response.json({ error: writeError.message }, { status: writeError.status });
       await writeAudit(base44, {
         action: 'error', module: 'billing', record_id: billNumber,
         new_value: { bill_number: billNumber, error: writeError.message, operation_id: operationId },

@@ -4,6 +4,8 @@ import { writeAudit } from '../shared/audit.js';
 import { calcFineWeight } from '../shared/billCalc.js';
 import { num, str } from '../shared/utils.js';
 import { db } from '../db/database.js';
+import { createBillNumberRepository } from '../repositories/billNumberRepository.js';
+import { releaseBillNumber } from '../services/billNumberService.js';
 
 // Delete Bill — backend-authorized, transactional reversal.
 // Admin-only. Reverses inventory stock movements (if finalized),
@@ -178,6 +180,12 @@ export default async function(req) {
         notes: `${bill.notes || ''}\n[DELETED on ${new Date().toISOString()}: ${reason}]`
       });
 
+      // 6b. Give the invoice number back if this was the latest one issued, so the next
+      // bill reuses it. Done in the same transaction as the deletion.
+      const numberRepository = createBillNumberRepository(txBase44);
+      const shopSettings = await numberRepository.getShopSettings();
+      const releasedCounter = shopSettings ? await releaseBillNumber(numberRepository, bill, shopSettings) : null;
+
       // 7. Audit Log
       await writeAudit(txBase44, {
         action: 'delete_bill',
@@ -195,17 +203,20 @@ export default async function(req) {
           is_deleted: true,
           status: 'deleted',
           reason,
+          invoice_number_released: releasedCounter !== null,
         },
         user_id: user.id,
         user_name: user.full_name || user.email || '',
         user_role: ctx.role,
       });
 
+      const reuseNote = releasedCounter !== null ? ` Invoice number ${bill.bill_number} will be used by the next bill.` : '';
       return {
         success: true,
         bill_id: bill.id,
         bill_number: bill.bill_number,
-        message: `Bill ${bill.bill_number} deleted successfully and related inventory/financial balances reversed.`
+        number_released: releasedCounter !== null,
+        message: `Bill ${bill.bill_number} deleted successfully and related inventory/financial balances reversed.${reuseNote}`
       };
     });
 

@@ -2,6 +2,7 @@ import { createClientFromRequest } from '../shared/createClient.js';
 import { authorize } from '../shared/tenant.js';
 import { writeAudit } from '../shared/audit.js';
 import { str } from '../shared/utils.js';
+import { createBillNumberRepository } from '../repositories/billNumberRepository.js';
 
 // Restore Record — single-business. Restores soft-deleted Bill or Customer.
 export default async function(req) {
@@ -26,6 +27,14 @@ export default async function(req) {
     const record = await entity.get(recordId).catch(() => null);
     if (!record) return Response.json({ error: 'Record not found' }, { status: 404 });
     if (!record.is_deleted) return Response.json({ error: 'Record is not deleted' }, { status: 400 });
+
+    // A deleted bill's number can have been reused by a newer bill; never bring back a duplicate.
+    if (entityName === 'Bill') {
+      const holder = await createBillNumberRepository(base44).findActiveBillByNumber(record.bill_number);
+      if (holder && holder.id !== record.id) {
+        return Response.json({ error: `Cannot restore: invoice number ${record.bill_number} is now used by another bill.` }, { status: 409 });
+      }
+    }
 
     await entity.update(recordId, { is_deleted: false });
     await writeAudit(base44, {

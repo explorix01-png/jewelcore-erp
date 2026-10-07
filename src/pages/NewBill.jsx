@@ -27,8 +27,10 @@ const formatPan = (v) => (v || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice
 
 export default function NewBill() {
   const t = useT();
-  const { can } = usePermission();
+  const { can, role } = usePermission();
   const canOverrideRate = can("rates", "update");
+  // Only an administrator may type a different invoice number (the server enforces this too).
+  const canEditInvoiceNumber = role === "admin";
 
   const [customers, setCustomers] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -72,11 +74,26 @@ export default function NewBill() {
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [panNumber, setPanNumber] = useState("");
   const [saving, setSaving] = useState(false);
+  // Invoice number: `null` means "automatic" (the form shows the next number as a preview);
+  // a string means the admin typed their own, which is then sent to the server.
+  const [nextInvoiceNumber, setNextInvoiceNumber] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState(null);
   const [lastBill, setLastBill] = useState(null);
   const [lastBillItems, setLastBillItems] = useState([]);
   const [viewLastBill, setViewLastBill] = useState(false);
 
+  // Preview only — the server picks the real number when the bill is saved.
+  const refreshNextInvoiceNumber = async () => {
+    try {
+      const res = await base44.functions.invoke("getNextBillNumber", {});
+      if (res.data?.bill_number) setNextInvoiceNumber(res.data.bill_number);
+    } catch (e) {
+      console.error("Could not load the next invoice number:", e);
+    }
+  };
+
   useEffect(() => {
+    refreshNextInvoiceNumber();
     (async () => {
       const [cust, inv, gst, s, purs] = await Promise.all([
         base44.entities.Customer.list("-created_date", 200),
@@ -397,6 +414,7 @@ export default function NewBill() {
       const res = await base44.functions.invoke("finalizeBill", {
         customer_id: customerId,
         bill_source: mode,
+        bill_number: invoiceNumber && invoiceNumber.trim() ? invoiceNumber.trim() : undefined,
         bill_date: billDate,
         gst_enabled: gstEnabled,
         gst_mode: gstMode,
@@ -428,11 +446,11 @@ export default function NewBill() {
       const result = res.data;
       if (!result.success) { alert(result.error || "Bill failed"); return; }
       // Load the full bill + items for printing
-      const [fullBillList, inv] = await Promise.all([
-        base44.entities.Bill.filter({ bill_number: result.bill_number }, "-bill_date", 1),
+      // Fetch by id, not by number: a deleted bill can share a number with the new one.
+      const [fullBill, inv] = await Promise.all([
+        base44.entities.Bill.get(result.bill_id),
         base44.entities.InventoryItem.filter({ is_archived: false }, "-updated_date", 500),
       ]);
-      const fullBill = fullBillList[0];
       const billItems = await base44.entities.BillItem.filter({ bill_id: fullBill.id }, "-created_date", 100);
       setLastBill(fullBill);
       setLastBillItems(billItems);
@@ -441,6 +459,7 @@ export default function NewBill() {
       setPaymentRef(""); setOldGold({ item: "", metal: "gold", purity: "", grossWeight: 0, deductionWeight: 0, ratePerGram: 0 });
       setPaymentNotes(""); setCustomRateOverride(false); setOtherCharges(0);
       setAadhaarNumber(""); setPanNumber(""); setBillNotes("");
+      setInvoiceNumber(null); refreshNextInvoiceNumber();
       setInventory(inv);
     } catch (e) {
       alert("Bill failed: " + (e.response?.data?.error || e.message));
@@ -688,6 +707,38 @@ export default function NewBill() {
               <Badge variant={gstEnabled && gstMode !== "none" ? "info" : "default"}>
                 {gstEnabled && gstMode !== "none" ? t("invoice.gstBill") : t("invoice.simpleBill")}
               </Badge>
+            </div>
+            {/* Invoice number: automatic by default; administrators can type their own */}
+            <div className="mb-3">
+              <Label className="text-xs">{t("billing.invoiceNo")}</Label>
+              {canEditInvoiceNumber ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    className="h-8 text-xs font-mono"
+                    value={invoiceNumber ?? nextInvoiceNumber}
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                    onBlur={() => { if (invoiceNumber !== null && invoiceNumber.trim() === "") setInvoiceNumber(null); }}
+                    maxLength={30}
+                    data-testid="invoice-number-input"
+                    aria-label={t("billing.invoiceNo")}
+                  />
+                  {invoiceNumber !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceNumber(null)}
+                      className="shrink-0 text-[11px] font-semibold text-amber-700 hover:text-amber-800"
+                      data-testid="invoice-number-reset"
+                    >
+                      {t("billing.invoiceNoAuto")}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="font-mono text-sm h-8 flex items-center" data-testid="invoice-number-readonly">{nextInvoiceNumber || "—"}</p>
+              )}
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {invoiceNumber === null ? t("billing.invoiceNoHintAuto") : t("billing.invoiceNoHintCustom")}
+              </p>
             </div>
             {/* Custom bill date + rate override */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
