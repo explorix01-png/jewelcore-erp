@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/erp";
 import { calcFineWeight, fmt, fmtNum, fmtWt3 } from "@/lib/billCalc";
+import { MAX_PAYMENT_METHODS, SPLIT_PAYMENT_MODES, nextUnusedMode, paymentModeLabel, settlementModeForPayments } from "@/lib/paymentModes";
 import { Plus, Trash2, Coins, CheckCircle2, AlertCircle } from "lucide-react";
 
 // Standard payment modes supported by JewelCore ERP
@@ -79,16 +80,31 @@ export default function PaymentSection({
     }
   };
 
-  const addPaymentMethod = () => {
-    const used = payments.map((p) => p.mode);
-    const available = ["cash", "upi", "card", "bank_transfer"].filter((m) => !used.includes(m));
-    const nextMode = available[0] || "cash";
-    setPayments([...payments, { mode: nextMode, amount: "" }]);
+  // Several payment methods can be used on one bill, each with its own amount
+  // (e.g. UPI ₹36,470 + Cash ₹7). Whenever the rows change, keep the
+  // "Settlement / Payment Mode" dropdown in step: one method shows that method,
+  // two or more show "Mixed".
+  const applyPayments = (nextPayments) => {
+    setPayments(nextPayments);
+    const nextMode = settlementModeForPayments(nextPayments, selectedPaymentMode);
+    if (nextMode !== selectedPaymentMode) setSelectedPaymentMode?.(nextMode);
   };
 
-  const removePaymentMethod = (idx) => setPayments(payments.filter((_, i) => i !== idx));
-  const updatePaymentMethod = (idx, field, val) =>
-    setPayments(payments.map((p, i) => (i === idx ? { ...p, [field]: val } : p)));
+  // A new method starts with the balance still to be settled, so the amounts
+  // always add up to the total unless the user changes them.
+  const addPaymentMethod = () => {
+    const alreadyEntered = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const goldCredit = useOldGold ? Number(exchangeValue) || 0 : 0;
+    const remaining = Math.round(Math.max(0, Number(totalAmount) - goldCredit - alreadyEntered) * 100) / 100;
+    applyPayments([...payments, { mode: nextUnusedMode(payments), amount: remaining > 0 ? String(remaining) : "" }]);
+  };
+
+  const removePaymentMethod = (idx) => applyPayments(payments.filter((_, i) => i !== idx));
+  const updatePaymentMethod = (idx, field, val) => {
+    const nextPayments = payments.map((p, i) => (i === idx ? { ...p, [field]: val } : p));
+    if (field === "mode") applyPayments(nextPayments);
+    else setPayments(nextPayments);
+  };
 
   const setOG = (field, val) => setOldGold((prev) => ({ ...prev, [field]: val }));
 
@@ -342,13 +358,14 @@ export default function PaymentSection({
           <div className="flex items-center justify-between">
             <Label className="text-xs font-semibold text-foreground">
               {selectedPaymentMode === "old_gold_plus_cash"
-                ? "Additional Cash Payment"
+                ? "Additional Payment"
                 : "Payment Method(s)"}
             </Label>
-            {selectedPaymentMode === "mixed" && payments.length < 4 && (
+            {payments.length < MAX_PAYMENT_METHODS && (
               <button
                 type="button"
                 onClick={addPaymentMethod}
+                data-testid="add-payment-method"
                 className="text-[11px] font-semibold text-amber-700 hover:text-amber-800 flex items-center gap-1"
               >
                 <Plus className="w-3 h-3" /> Add Method
@@ -357,33 +374,35 @@ export default function PaymentSection({
           </div>
 
           {payments.map((p, i) => (
-            <div key={i} className="flex items-center gap-2">
+            <div key={i} className="flex items-center gap-2" data-testid="payment-row">
               <Select
                 value={p.mode}
                 onValueChange={(v) => updatePaymentMethod(i, "mode", v)}
-                disabled={selectedPaymentMode === "old_gold_plus_cash"}
               >
-                <SelectTrigger className="h-8 w-32 text-xs">
+                <SelectTrigger className="h-8 w-32 text-xs" aria-label={`Payment method ${i + 1}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="upi">UPI / QR</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  {SPLIT_PAYMENT_MODES.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Input
                 type="number"
+                min="0"
+                step="0.01"
                 className="h-8 flex-1 text-xs font-mono font-bold text-right"
                 placeholder="Amount (₹)"
+                aria-label={`Payment amount ${i + 1}`}
                 value={p.amount}
                 onChange={(e) => updatePaymentMethod(i, "amount", e.target.value)}
               />
-              {selectedPaymentMode === "mixed" && payments.length > 1 && (
+              {payments.length > 1 && (
                 <button
                   type="button"
                   onClick={() => removePaymentMethod(i)}
+                  aria-label={`Remove payment method ${i + 1}`}
                   className="p-1 text-red-600 hover:bg-red-50 rounded"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -431,12 +450,12 @@ export default function PaymentSection({
             </div>
           )}
 
-          {monetarySum > 0 && (
-            <div className="flex justify-between text-emerald-800 font-medium">
-              <span>Customer Gives (Cash / Digital Paid):</span>
-              <span className="font-mono font-bold text-emerald-950">- {fmt(monetarySum)}</span>
+          {!creditDue && payments.filter((p) => Number(p.amount) > 0).map((p, i) => (
+            <div key={i} className="flex justify-between text-emerald-800 font-medium">
+              <span>Customer Gives ({paymentModeLabel(p.mode)}):</span>
+              <span className="font-mono font-bold text-emerald-950">- {fmt(p.amount)}</span>
             </div>
-          )}
+          ))}
 
           <div className="flex justify-between pt-1 border-t border-border/60 font-semibold">
             <span>Total Value Settled:</span>

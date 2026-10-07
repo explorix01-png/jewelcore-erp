@@ -19,11 +19,11 @@ function threeDigits(n) {
 }
 
 export function amountToWords(num) {
-  num = Math.round(Number(num) || 0);
-  if (num === 0) return "Zero Rupees Only";
-
-  const rupees = Math.floor(num);
-  const paise = Math.round((num - rupees) * 100);
+  const value = Math.abs(Number(num) || 0);
+  let rupees = Math.floor(value);
+  let paise = Math.round((value - rupees) * 100);
+  if (paise === 100) { rupees += 1; paise = 0; }   // e.g. 10.996 -> 11 rupees, not "10 and 100 paise"
+  if (rupees === 0 && paise === 0) return "Zero Rupees Only";
 
   let result = "";
   let n = rupees;
@@ -48,7 +48,7 @@ export function amountToWords(num) {
     result += threeDigits(n);
   }
 
-  result = result.trim() + " Rupees";
+  result = (result.trim() || "Zero") + " Rupees";
   if (paise > 0) {
     result += " and " + twoDigits(paise) + " Paise";
   }

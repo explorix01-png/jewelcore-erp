@@ -27,7 +27,9 @@ export function calcItem(item) {
   const hallmarkingCharge = num(item.hallmarking_charge); // ₹-per-piece
   const gstEnabled = item.gst_enabled !== false;
 
-  const totalNetWeight = round(netWeight * quantity);
+  // Weights are kept to 3 decimals (e.g. 4.207 g). Rounding to 2 decimals here
+  // would silently misprice every piece whose weight isn't a multiple of 0.01 g.
+  const totalNetWeight = round3(netWeight * quantity);
 
   // --- WASTAGE / CHARGEABLE WEIGHT ---
   // When wastage_type is set (silver model), wastage affects chargeable weight
@@ -145,6 +147,40 @@ export function calcBill(items, billDiscount = 0, gstConfig = null, options = {}
 
 export function computeDue(totalAmount, paidAmount) {
   return round(totalAmount - num(paidAmount));
+}
+
+// Short label for how a making charge was entered: "20%", "₹500/pc" or "₹80/g".
+export function makingChargeLabel(type, rate) {
+  const value = num(rate);
+  if (type === "fixed") return `₹${value}/pc`;
+  if (type === "per_gram") return `₹${value}/g`;
+  return `${value}%`;
+}
+
+// Itemised charges behind a bill's subtotal, for the Bill Summary panel. Works
+// on the calculated items from calcBill, so it can never drift from the totals:
+//   metal + making + wastage + hallmarking − item discounts = subtotal
+// `makingRows` has one entry per item; `makingLabel` is set when every item uses
+// the same making charge (e.g. "20%"), so the summary can name it on one line.
+export function calcChargeBreakdown(items) {
+  const sumOf = (pick) => round(items.reduce((s, it) => s + num(pick(it)), 0));
+
+  const makingRows = items.map((it) => ({
+    name: it.item_name || "",
+    label: makingChargeLabel(it.making_charge_type || "percentage", it.making_charge),
+    amount: num(it.making_amount),
+  }));
+  const uniform = makingRows.length > 0 && makingRows.every((r) => r.label === makingRows[0].label);
+
+  return {
+    metalValue: sumOf((it) => it.metal_value),
+    makingAmount: sumOf((it) => it.making_amount),
+    wastageAmount: sumOf((it) => it.wastage_amount),
+    hallmarkingAmount: sumOf((it) => it.hallmarking_amount),
+    itemDiscount: sumOf((it) => it.discount),
+    makingRows,
+    makingLabel: uniform ? makingRows[0].label : "",
+  };
 }
 
 // Calculate a purity rate from the base rate using purity percentage or karat.

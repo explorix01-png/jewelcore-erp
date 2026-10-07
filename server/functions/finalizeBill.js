@@ -4,6 +4,9 @@ import { calcBill, computeDue, calcFineWeight, sortPuritiesDescending } from '..
 import { writeAudit } from '../shared/audit.js';
 import { num, str } from '../shared/utils.js';
 import { db } from '../db/database.js';
+import { createRateRepository } from '../repositories/rateRepository.js';
+import { resolveEffectiveRates, normalizeRateHistory, toRateSnapshot } from '../services/rateResolverService.js';
+import { checkPaymentBreakdown } from '../services/paymentComponentsService.js';
 
 // Finalize Bill — single-business server-side business action with IDEMPOTENCY.
 // All referenced records are validated. No tenant scoping — the app has one business.
@@ -25,6 +28,7 @@ export default async function(req) {
     const paymentMode = str(body.payment_mode) || 'cash';
     const paymentComponents = Array.isArray(body.payment_components) ? body.payment_components : [];
     const paymentComponentsStr = paymentComponents.length > 0 ? JSON.stringify(paymentComponents) : '';
+    const paymentReference = str(body.payment_reference);
     const notes = str(body.notes);
     const billSourceRaw = str(body.bill_source);
     const billSource = ['inventory', 'manual', 'customer_purchase'].includes(billSourceRaw) ? billSourceRaw : 'inventory';
@@ -36,7 +40,11 @@ export default async function(req) {
     const operationId = str(body.operation_id) || `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     // Custom bill date — admin can select a historical/business date. Falls back to now.
     const customBillDate = str(body.bill_date);
-    const billDateIso = customBillDate ? new Date(customBillDate).toISOString() : new Date().toISOString();
+    // A bill dated today keeps the actual time of sale (the printed invoice shows
+    // it); only a back-dated bill uses midnight of the chosen date.
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const isDatedToday = !customBillDate || customBillDate === todayUtc;
+    const billDateIso = isDatedToday ? new Date().toISOString() : new Date(customBillDate).toISOString();
     const customRateOverride = body.custom_rate_override === true;
 
     // --- IDEMPOTENCY CHECK ---
@@ -90,7 +98,7 @@ export default async function(req) {
     if (!settings) return Response.json({ error: 'Shop settings not configured' }, { status: 400 });
 
     // Rates — resolve effective rate on or before billDateIso
-    const allHistory = await base44.asServiceRole.entities.RateHistory.list('-effective_date', 5000);
+    const allHistory = normalizeRateHistory(await base44.asServiceRole.entities.RateHistory.list('-effective_date', 5000));
     const eligibleRates = allHistory.filter((r) => r.effective_date && new Date(r.effective_date).toISOString() <= billDateIso);
     
     // Check if date has no valid rate
@@ -129,7 +137,10 @@ export default async function(req) {
     const effectiveGold24k = latestGold24k ? Number(latestGold24k.rate_per_gram) : (Number(settings?.gold_24k_rate) || 0);
     const effectiveSilver999 = latestSilver999 ? Number(latestSilver999.rate_per_gram) : (Number(settings?.silver_rate) || 0);
 
-    const rateSnapshot = {
+    // Snapshot the rates exactly as the billing form resolved them for the bill
+    // date (one entry per purity). Falls back to the raw history if unresolvable.
+    const resolvedRates = await resolveEffectiveRates(createRateRepository(base44), customBillDate || billDateIso).catch(() => null);
+    const rateSnapshot = resolvedRates ? toRateSnapshot(resolvedRates, billDateIso) : {
       bill_date: billDateIso,
       effective_date: latestGold24k?.effective_date || billDateIso,
       gold_24k_rate: effectiveGold24k,
@@ -182,6 +193,9 @@ export default async function(req) {
         };
       }
     }
+
+    const paymentMismatch = checkPaymentBreakdown(paymentComponents, paidAmount, Boolean(goldExchangeData));
+    if (paymentMismatch) return Response.json({ error: paymentMismatch }, { status: 400 });
 
     const normalizedItems = items.map((it) => {
       let rate = num(it.rate_per_gram);
@@ -242,7 +256,8 @@ export default async function(req) {
           gst_enabled: gstEnabled, gst_mode: calc.gstMode, gst_rate_snapshot: effectiveGstRate,
           cgst: calc.cgst, sgst: calc.sgst, igst: calc.igst, total_amount: calc.totalAmount,
           paid_amount: paidAmount, due_amount: due, payment_mode: paymentMode,
-          payment_components: paymentComponentsStr, custom_rate_override: customRateOverride,
+          payment_components: paymentComponentsStr, payment_reference: paymentReference,
+          custom_rate_override: customRateOverride,
           aadhaar_number: aadhaarNumber, pan_number: panNumber,
           rate_snapshot: JSON.stringify(rateSnapshot), operation_id: operationId, status: 'finalized', notes,
           public_token: publicToken,

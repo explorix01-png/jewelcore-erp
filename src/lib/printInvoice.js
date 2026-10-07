@@ -8,12 +8,21 @@
 //
 // The invoice layout lives in @/lib/invoiceTemplate and is shared by Print, PDF
 // and WhatsApp — so all three produce identical output.
+import { base44 } from "@/api/base44Client";
 import { buildInvoiceDocument } from "@/lib/invoiceTemplate";
+
+// The customer record supplies the address printed in the "Customer Details" block.
+async function loadCustomer(bill) {
+  if (!bill.customer_id) return null;
+  try { return await base44.entities.Customer.get(bill.customer_id); } catch { return null; }
+}
 
 export async function printInvoice(bill, items, settings) {
   const w = window.open("", "_blank", "width=820,height=650");
   if (!w) { alert("Please allow popups to print the invoice"); return; }
   if (!items || items.length === 0) { w.close(); alert("No items to print"); return; }
+
+  const customer = await loadCustomer(bill);
 
   // Customer-facing QR: encodes the public bill URL (token-based, no internal IDs).
   let qrDataUrl = "";
@@ -24,7 +33,7 @@ export async function printInvoice(bill, items, settings) {
     } catch { /* QR failed — print without it */ }
   }
 
-  const html = buildInvoiceDocument({ bill, items, shop: settings, customer: null }, { qrDataUrl });
+  const html = buildInvoiceDocument({ bill, items, shop: settings, customer }, { qrDataUrl });
   w.document.open();
   w.document.write(html);
   w.document.close();

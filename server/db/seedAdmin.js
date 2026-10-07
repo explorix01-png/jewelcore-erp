@@ -173,14 +173,24 @@ export async function seedLocalAdmin() {
   const goldRateVal = Number(primaryShop.data?.gold_24k_rate) || 7200;
   const silverRateVal = Number(primaryShop.data?.silver_rate) || 85;
 
+  // Rows must carry `rate_per_gram` and the base purity (24K gold / 999 silver),
+  // exactly like changeRate writes them — a bare `rate` field is unreadable by
+  // getEffectiveRates and zeroes every purity's rate on the billing screen.
+  const basePurities = await entityService.filter('PurityMaster', { tenant_id: shopId, is_active: true }, 'purity_value', 100).catch(() => []);
+  const baseGold = basePurities.find(p => p.metal_type === 'gold' && Number(p.purity_value) === 24);
+  const baseSilver = basePurities.find(p => p.metal_type === 'silver' && Number(p.purity_value) >= 99);
+
   if (!hasGoldToday) {
     await entityService.create('RateHistory', {
       tenant_id: shopId,
       metal_type: 'gold',
-      rate: goldRateVal,
+      purity_id: baseGold?.id,
+      purity_display: baseGold?.display_format || baseGold?.name || '24K',
+      rate_per_gram: goldRateVal,
       effective_date: now,
+      source: 'seed',
       is_active: true,
-      note: 'Auto-seeded daily rate'
+      notes: `24K=${goldRateVal} (auto-seeded daily rate)`
     });
     console.log(`[Seed Admin] Seeded today's gold rate: ₹${goldRateVal}/g`);
   }
@@ -189,10 +199,13 @@ export async function seedLocalAdmin() {
     await entityService.create('RateHistory', {
       tenant_id: shopId,
       metal_type: 'silver',
-      rate: silverRateVal,
+      purity_id: baseSilver?.id,
+      purity_display: baseSilver?.display_format || baseSilver?.name || '999',
+      rate_per_gram: silverRateVal,
       effective_date: now,
+      source: 'seed',
       is_active: true,
-      note: 'Auto-seeded daily rate'
+      notes: `999=${silverRateVal} (auto-seeded daily rate)`
     });
     console.log(`[Seed Admin] Seeded today's silver rate: ₹${silverRateVal}/g`);
   }

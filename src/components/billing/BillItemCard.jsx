@@ -3,14 +3,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2 } from "lucide-react";
-import { fmt, fmtNum } from "@/lib/billCalc";
+import { fmt } from "@/lib/billCalc";
+import { puritiesForMetal } from "@/lib/billRows";
 
 // Mobile/tablet card layout for New Bill items.
 // Handles all 3 billing modes: inventory, manual, customer_purchase.
 // All fields from the desktop table are preserved — only the layout changes.
-export default function BillItemCard({ row, index, mode, calc, t, updateRow, removeRow }) {
+export default function BillItemCard({ row, index, mode, calc, t, updateRow, removeRow, purities = [] }) {
   const c = calc || { total: 0 };
-  const lineNetTotal = fmtNum((Number(row.net_weight) || 0) * (Number(row.quantity) || 0));
+  const lineNetTotal = ((Number(row.net_weight) || 0) * (Number(row.quantity) || 0)).toFixed(3);
 
   return (
     <div className="border-b p-3 space-y-2 bg-card">
@@ -35,11 +36,24 @@ export default function BillItemCard({ row, index, mode, calc, t, updateRow, rem
           <>
             <div>
               <Label className="text-xs">{t("billing.metalType")}</Label>
-              <Input type="text" className="h-8 text-xs" value={row.metal_type} onChange={(e) => updateRow(index, "metal_type", e.target.value)} />
+              <Select value={row.metal_type || "gold"} onValueChange={(v) => updateRow(index, "metal_type", v)}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gold">Gold</SelectItem>
+                  <SelectItem value="silver">Silver</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label className="text-xs">{t("billing.purity")}</Label>
-              <Input type="text" className="h-8 text-xs" value={row.purity_display} onChange={(e) => updateRow(index, "purity_display", e.target.value)} />
+              <Select value={row.purity_display || ""} onValueChange={(v) => updateRow(index, "purity_display", v)}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={t("billing.purity")} /></SelectTrigger>
+                <SelectContent>
+                  {puritiesForMetal(purities, row.metal_type).map((p) => (
+                    <SelectItem key={p.id} value={p.display_format || p.name}>{p.display_format || p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </>
         )}
@@ -70,20 +84,20 @@ export default function BillItemCard({ row, index, mode, calc, t, updateRow, rem
         </div>
         <div>
           <Label className="text-xs">{t("billing.grossWt")}</Label>
-          <Input type="number" className="h-8 text-xs" value={row.gross_weight} onChange={(e) => updateRow(index, "gross_weight", e.target.value)} />
+          <Input type="number" step="0.001" min="0" className="h-8 text-xs" value={row.gross_weight} onChange={(e) => updateRow(index, "gross_weight", e.target.value)} />
         </div>
         <div>
           <Label className="text-xs">{t("billing.stoneWt")}</Label>
-          <Input type="number" className="h-8 text-xs" value={row.stone_weight} onChange={(e) => updateRow(index, "stone_weight", e.target.value)} />
+          <Input type="number" step="0.001" min="0" className="h-8 text-xs" value={row.stone_weight} onChange={(e) => updateRow(index, "stone_weight", e.target.value)} />
         </div>
         <div>
           <Label className="text-xs">{t("billing.netWt")}</Label>
-          <Input type="number" className="h-8 text-xs" value={row.net_weight} onChange={(e) => updateRow(index, "net_weight", e.target.value)} />
+          <Input type="number" readOnly tabIndex={-1} title="Net Wt = Gross Wt − Less Wt (calculated)" className="h-8 text-xs font-semibold bg-muted/60" value={row.net_weight} />
           <p className="text-[10px] text-muted-foreground mt-0.5">Σ {lineNetTotal}g</p>
         </div>
         <div>
           <Label className="text-xs">{t("billing.rate")}</Label>
-          <Input type="number" className="h-8 text-xs" value={row.rate_per_gram} onChange={(e) => updateRow(index, "rate_per_gram", e.target.value)} />
+          <Input type="number" step="0.01" min="0" className="h-8 text-xs" value={row.rate_per_gram} onChange={(e) => updateRow(index, "rate_per_gram", e.target.value)} />
         </div>
         <div>
           <Label className="text-xs">{t("billing.making")}</Label>

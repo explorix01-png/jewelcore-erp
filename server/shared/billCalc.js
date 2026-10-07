@@ -75,7 +75,9 @@ export function calcItem(item) {
   const hallmarkingCharge = num(item.hallmarking_charge); // ₹-per-piece
   const gstEnabled = item.gst_enabled !== false;
 
-  const totalNetWeight = round(netWeight * quantity);
+  // Weights are kept to 3 decimals (e.g. 4.207 g). Rounding to 2 decimals here
+  // would silently misprice every piece whose weight isn't a multiple of 0.01 g.
+  const totalNetWeight = round3(netWeight * quantity);
 
   // --- WASTAGE / CHARGEABLE WEIGHT ---
   let chargeableWeight = totalNetWeight;

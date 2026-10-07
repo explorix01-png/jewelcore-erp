@@ -3,7 +3,9 @@ import { base44 } from "@/api/base44Client";
 import { useT } from "@/lib/i18n";
 import { usePermission } from "@/lib/permissions";
 import { PageHeader, Spinner, Badge } from "@/components/ui/erp";
-import { calcBill, fmt, fmtNum, sortPuritiesDescending } from "@/lib/billCalc";
+import { calcBill, calcChargeBreakdown, fmt, fmtNum, sortPuritiesDescending } from "@/lib/billCalc";
+import { applyRowChange, findRate, puritiesForMetal, repriceRows } from "@/lib/billRows";
+import { deriveBillPaymentMode } from "@/lib/paymentModes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -130,10 +132,9 @@ export default function NewBill() {
     return () => clearTimeout(t);
   }, [scanFeedback]);
 
-  const rateFor = (metalType, purityDisplay) => {
-    const r = rates.find((rt) => rt.metal_type === metalType && (!purityDisplay || rt.purity_display === purityDisplay) && rt.is_active);
-    return r ? Number(r.rate_per_gram) : 0;
-  };
+  // Resolved rates (getEffectiveRates) carry no is_active flag, so the lookup
+  // only skips rates explicitly marked inactive.
+  const rateFor = (metalType, purityDisplay) => findRate(rates, metalType, purityDisplay);
 
   const addItem = (inv) => {
     if (!inv) return;
@@ -157,13 +158,19 @@ export default function NewBill() {
     }
 
     const rate = rateFor(inv.metal_type, inv.purity_display);
+    // Per-piece weights. Less weight is whatever separates gross from net, so
+    // "Gross − Less = Net" already holds for the stocked piece and stays true
+    // as the user edits either weight.
+    const perPieceDivisor = Number(inv.quantity) > 0 ? Number(inv.quantity) : 1;
+    const grossPerPiece = Number(inv.gross_weight) / perPieceDivisor;
+    const netPerPiece = Number(inv.net_weight) / perPieceDivisor;
     setRows((prev) => [...prev, {
       item_id: inv.item_id, item_name: inv.item_name, item_code: inv.item_code, huid: inv.huid || "", category_name: inv.category_name,
       metal_type: inv.metal_type, purity_display: inv.purity_display, hsn: inv.hsn,
       quantity: 1,
-      gross_weight: Number(inv.quantity) > 0 ? Number(inv.gross_weight) / Number(inv.quantity) : Number(inv.gross_weight),
-      stone_weight: 0,
-      net_weight: Number(inv.quantity) > 0 ? Number(inv.net_weight) / Number(inv.quantity) : Number(inv.net_weight),
+      gross_weight: grossPerPiece,
+      stone_weight: Math.max(0, Math.round((grossPerPiece - netPerPiece) * 1000) / 1000),
+      net_weight: netPerPiece,
       wastage: inv.wastage || 0,
       rate_per_gram: rate, making_charge: settings?.making_charge_default || 8, making_charge_type: settings?.making_charge_type_default || "percentage",
       hallmarking_charge: 0, discount: 0, gst_rate: (gstConfigs[0]?.gst_rate) || 3, _invId: inv.id, _stock: inv.quantity,
@@ -218,16 +225,23 @@ export default function NewBill() {
     setRows((prev) => [...prev, {
       item_name: "", item_code: "", category_name: "", metal_type: "gold", purity_display: "", hsn: "",
       quantity: 1, gross_weight: 0, stone_weight: 0, net_weight: 0, wastage: 0, wastage_type: "percentage", purity_value: 0,
-      rate_per_gram: rateFor("gold", ""), making_charge: settings?.making_charge_default || 8,
+      // Manual jewellery: the rate fills in when a purity is picked. Gold/silver
+      // purchases have no purity picker, so they start from the base rate.
+      rate_per_gram: mode === "customer_purchase" ? rateFor("gold", "") : 0,
+      making_charge: settings?.making_charge_default || 8,
       making_charge_type: settings?.making_charge_type_default || "percentage",
       hallmarking_charge: 0, discount: 0, gst_rate: (gstConfigs[0]?.gst_rate) || 3,
     }]);
   };
 
-  const updateRow = (i, field, val) => setRows((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
+  const updateRow = (i, field, val) => setRows((prev) => prev.map((r, idx) => (
+    idx === i ? applyRowChange(r, field, val, { rates, purities, mode }) : r
+  )));
   const removeRow = (i) => setRows((prev) => prev.filter((_, idx) => idx !== i));
 
   const calc = useMemo(() => calcBill(rows, Number(billDiscount) || 0, gstConfigs[0], { gst_enabled: gstEnabled, gst_mode: gstMode, other_charges: Number(otherCharges) || 0 }), [rows, billDiscount, gstConfigs, gstEnabled, gstMode, otherCharges]);
+
+  const charges = useMemo(() => calcChargeBreakdown(calc.items), [calc.items]);
 
   const exchangeValue = useMemo(() => {
     const netWt = Math.max(0, Number(oldGold.grossWeight) - Number(oldGold.deductionWeight));
@@ -257,7 +271,7 @@ export default function NewBill() {
     return parts.join(" | ");
   }, [paymentRef, oldGold, exchangeValue, payments, paymentNotes, useOldGold]);
 
-  const paymentModeForBackend = creditDue ? "credit_due" : (payments.length === 1 && !useOldGold ? payments[0].mode : "mixed");
+  const paymentModeForBackend = deriveBillPaymentMode({ creditDue, useOldGold, payments });
   const paymentComponentsForBackend = creditDue ? [] : payments.filter(p => Number(p.amount) > 0).map(p => ({ mode: p.mode, amount: Number(p.amount) }));
 
   const createCustomer = async (custData) => {
@@ -299,10 +313,7 @@ export default function NewBill() {
 
         // Update rows with new effective rates if not custom override
         if (!customRateOverride) {
-          setRows((prevRows) => prevRows.map((row) => {
-            const r = newRates.find((rt) => rt.metal_type === row.metal_type && (!row.purity_display || rt.purity_display === row.purity_display) && rt.is_active);
-            return r ? { ...row, rate_per_gram: Number(r.rate_per_gram) } : row;
-          }));
+          setRows((prevRows) => repriceRows(prevRows, newRates, mode));
         }
 
         // Update oldGold rate if purity selected
@@ -407,8 +418,9 @@ export default function NewBill() {
         aadhaar_number: aadhaarNumber,
         pan_number: panNumber,
         paid_amount: computedPaid,
-        payment_mode: selectedPaymentMode || paymentModeForBackend,
+        payment_mode: paymentModeForBackend,
         payment_components: paymentComponentsForBackend,
+        payment_reference: paymentRef,
         payment_details: paymentDetailsStr,
         gold_exchange: goldExchangePayload,
         notes: billNotes,
@@ -572,7 +584,7 @@ export default function NewBill() {
                   <tbody className="divide-y">
                     {rows.map((r, i) => {
                       const c = calc.items[i] || { total: 0 };
-                      const lineNetTotal = fmtNum((Number(r.net_weight) || 0) * (Number(r.quantity) || 0));
+                      const lineNetTotal = ((Number(r.net_weight) || 0) * (Number(r.quantity) || 0)).toFixed(3);
                       return (
                         <tr key={i}>
                           <td className="px-3 py-2">
@@ -583,8 +595,21 @@ export default function NewBill() {
                             )}
                             {mode === "manual" && (
                               <div className="flex gap-1 mt-1">
-                                <Input type="text" className="h-6 w-16 text-xs" value={r.metal_type} onChange={(e) => updateRow(i, "metal_type", e.target.value)} placeholder={t("billing.metalType")} />
-                                <Input type="text" className="h-6 w-16 text-xs" value={r.purity_display} onChange={(e) => updateRow(i, "purity_display", e.target.value)} placeholder={t("billing.purity")} />
+                                <Select value={r.metal_type || "gold"} onValueChange={(v) => updateRow(i, "metal_type", v)}>
+                                  <SelectTrigger className="h-6 w-20 text-[10px] px-1" aria-label={t("billing.metalType")}><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="gold">Gold</SelectItem>
+                                    <SelectItem value="silver">Silver</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <Select value={r.purity_display || ""} onValueChange={(v) => updateRow(i, "purity_display", v)}>
+                                  <SelectTrigger className="h-6 w-20 text-[10px] px-1" aria-label={t("billing.purity")}><SelectValue placeholder={t("billing.purity")} /></SelectTrigger>
+                                  <SelectContent>
+                                    {puritiesForMetal(purities, r.metal_type).map((p) => (
+                                      <SelectItem key={p.id} value={p.display_format || p.name}>{p.display_format || p.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </div>
                             )}
                             {mode === "customer_purchase" && (
@@ -606,13 +631,13 @@ export default function NewBill() {
                               <p className="text-[10px] text-red-600 mt-0.5 whitespace-nowrap">Stock: {r._stock}</p>
                             )}
                           </td>
-                          <td className="px-2 py-2"><Input type="number" className="h-7 w-20 text-xs" value={r.gross_weight} onChange={(e) => updateRow(i, "gross_weight", e.target.value)} /></td>
-                          <td className="px-2 py-2"><Input type="number" className="h-7 w-20 text-xs" value={r.stone_weight} onChange={(e) => updateRow(i, "stone_weight", e.target.value)} /></td>
+                          <td className="px-2 py-2"><Input type="number" step="0.001" min="0" className="h-7 w-20 text-xs" value={r.gross_weight} onChange={(e) => updateRow(i, "gross_weight", e.target.value)} /></td>
+                          <td className="px-2 py-2"><Input type="number" step="0.001" min="0" className="h-7 w-20 text-xs" value={r.stone_weight} onChange={(e) => updateRow(i, "stone_weight", e.target.value)} /></td>
                           <td className="px-2 py-2">
-                            <Input type="number" className="h-7 w-20 text-xs" value={r.net_weight} onChange={(e) => updateRow(i, "net_weight", e.target.value)} />
+                            <Input type="number" readOnly tabIndex={-1} title="Net Wt = Gross Wt − Less Wt (calculated)" className="h-7 w-20 text-xs font-semibold bg-muted/60" value={r.net_weight} />
                             <p className="text-[10px] text-muted-foreground mt-0.5">Σ {lineNetTotal}g</p>
                           </td>
-                          <td className="px-2 py-2"><Input type="number" className="h-7 w-24 text-xs" value={r.rate_per_gram} onChange={(e) => updateRow(i, "rate_per_gram", e.target.value)} /></td>
+                          <td className="px-2 py-2"><Input type="number" step="0.01" min="0" className="h-7 w-24 text-xs" value={r.rate_per_gram} onChange={(e) => updateRow(i, "rate_per_gram", e.target.value)} /></td>
                           <td className="px-2 py-2">
                             <Input type="number" className="h-7 w-16 text-xs" value={r.making_charge} onChange={(e) => updateRow(i, "making_charge", e.target.value)} />
                             <Select value={r.making_charge_type || "percentage"} onValueChange={(v) => updateRow(i, "making_charge_type", v)}>
@@ -648,7 +673,7 @@ export default function NewBill() {
               </div>
               <div className="lg:hidden divide-y">
                 {rows.map((r, i) => (
-                  <BillItemCard key={i} row={r} index={i} mode={mode} calc={calc.items[i]} t={t} updateRow={updateRow} removeRow={removeRow} />
+                  <BillItemCard key={i} row={r} index={i} mode={mode} calc={calc.items[i]} t={t} updateRow={updateRow} removeRow={removeRow} purities={purities} />
                 ))}
               </div>
             </div>
@@ -709,6 +734,30 @@ export default function NewBill() {
               <p className="text-[10px] text-amber-700 mb-2 -mt-1">{t("billing.customRateHint")}</p>
             )}
             <div className="space-y-1.5 text-sm">
+              {rows.length > 0 && (
+                <div className="space-y-1 pb-2 mb-1 border-b border-dashed" data-testid="charge-breakdown">
+                  <div className="flex justify-between"><span className="text-muted-foreground">{t("billing.metalValue")}</span><span>{fmt(charges.metalValue)}</span></div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{t("billing.makingCharges")}{charges.makingLabel ? ` (${charges.makingLabel})` : ""}</span>
+                    <span>{fmt(charges.makingAmount)}</span>
+                  </div>
+                  {!charges.makingLabel && charges.makingRows.length > 1 && charges.makingRows.map((m, idx) => (
+                    <div key={idx} className="flex justify-between gap-2 pl-3 text-[11px] text-muted-foreground">
+                      <span className="truncate">{m.name || `${t("billing.item")} ${idx + 1}`} · {m.label}</span>
+                      <span className="shrink-0">{fmt(m.amount)}</span>
+                    </div>
+                  ))}
+                  {charges.wastageAmount > 0 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">{t("billing.wastageCharges")}</span><span>{fmt(charges.wastageAmount)}</span></div>
+                  )}
+                  {charges.hallmarkingAmount > 0 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">{t("billing.hallmarking")}</span><span>{fmt(charges.hallmarkingAmount)}</span></div>
+                  )}
+                  {charges.itemDiscount > 0 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">{t("billing.itemDiscount")}</span><span>− {fmt(charges.itemDiscount)}</span></div>
+                  )}
+                </div>
+              )}
               <div className="flex justify-between"><span className="text-muted-foreground">{t("billing.subtotal")}</span><span>{fmt(calc.subtotal)}</span></div>
               <div className="flex justify-between items-center"><span className="text-muted-foreground">{t("billing.discount")}</span>
                 <Input type="number" className="h-7 w-24 text-xs text-right" value={billDiscount} onChange={(e) => setBillDiscount(e.target.value)} />
@@ -716,9 +765,6 @@ export default function NewBill() {
               <div className="flex justify-between items-center"><span className="text-muted-foreground">{t("billing.otherCharges")}</span>
                 <Input type="number" className="h-7 w-24 text-xs text-right" value={otherCharges} onChange={(e) => setOtherCharges(e.target.value)} placeholder="0" />
               </div>
-              {calc.hallmarkingTotal > 0 && (
-                <div className="flex justify-between"><span className="text-muted-foreground">{t("billing.hallmarking")}</span><span>{fmt(calc.hallmarkingTotal)}</span></div>
-              )}
               <label className="flex items-center gap-2 text-sm py-1">
                 <input type="checkbox" checked={gstEnabled} onChange={(e) => { setGstEnabled(e.target.checked); if (!e.target.checked) setGstMode("none"); }} />
                 {t("billing.gstEnabled")}

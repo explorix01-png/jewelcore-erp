@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import QuickActions from "@/components/dashboard/QuickActions";
 import DashboardDrillDownModal from "@/components/dashboard/DashboardDrillDownModal";
+import PeriodToggle from "@/components/dashboard/PeriodToggle";
 
 export default function Dashboard() {
   const t = useT();
@@ -23,6 +24,10 @@ export default function Dashboard() {
   const [rangeLoading, setRangeLoading] = useState(false);
   const [weightPeriod, setWeightPeriod] = useState("daily");
   const [drillDown, setDrillDown] = useState(null);
+  const [topCustomersPeriod, setTopCustomersPeriod] = useState("monthly");
+  const [topCustomers, setTopCustomers] = useState(null);
+  const [topCustomersLoading, setTopCustomersLoading] = useState(true);
+  const [topCustomersError, setTopCustomersError] = useState(false);
 
   // Static aggregates — fetched ONCE on mount
   useEffect(() => {
@@ -55,11 +60,33 @@ export default function Dashboard() {
     })();
   }, [range]);
 
+  // Top customers — own period filter, independent of the sales range above.
+  // `ignore` drops a slow response if the user has already switched period.
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      setTopCustomersLoading(true);
+      setTopCustomersError(false);
+      try {
+        const res = await base44.functions.invoke("getTopCustomers", { period: topCustomersPeriod });
+        if (res.data?.error) throw new Error(res.data.error);
+        if (!ignore) setTopCustomers(res.data.topCustomers || []);
+      } catch (e) {
+        console.error(e);
+        if (!ignore) setTopCustomersError(true);
+      } finally {
+        if (!ignore) setTopCustomersLoading(false);
+      }
+    })();
+    return () => { ignore = true; };
+  }, [topCustomersPeriod]);
+
   if (loading) return <Spinner label="Loading dashboard intelligence..." />;
   if (!staticData) return <EmptyState title={t("dashboard.noData")} description={t("dashboard.noDataDesc")} />;
 
   const s = staticData;
-  const r = rangeData || { inventorySales: 0, manualSales: 0, gstSales: 0, nonGstSales: 0, collectedPayments: 0, topCustomers: [] };
+  const r = rangeData || { inventorySales: 0, manualSales: 0, gstSales: 0, nonGstSales: 0, collectedPayments: 0 };
+  const topCustomerPeriods = ["daily", "weekly", "monthly"].map((key) => ({ key, label: t(`dashboard.${key}`) }));
 
   const todayFormatted = new Intl.DateTimeFormat("en-IN", {
     weekday: "long",
@@ -423,15 +450,26 @@ export default function Dashboard() {
               <Users className="w-4 h-4 text-amber-600" />
               <h3 className="font-display font-bold text-foreground">{t("dashboard.topCustomers")}</h3>
             </div>
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase">{range}</span>
           </div>
 
-          {r.topCustomers.length === 0 ? (
+          <PeriodToggle
+            options={topCustomerPeriods}
+            value={topCustomersPeriod}
+            onChange={setTopCustomersPeriod}
+            fullWidth
+            ariaLabel={t("dashboard.topCustomers")}
+          />
+
+          {topCustomersError ? (
+            <p className="text-sm text-red-600 py-8 text-center">Couldn't load top customers. Try another period or refresh.</p>
+          ) : topCustomers === null || (topCustomersLoading && topCustomers.length === 0) ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">Loading…</p>
+          ) : topCustomers.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">{t("dashboard.noDataPeriod")}</p>
           ) : (
-            <div className="space-y-2.5">
-              {r.topCustomers.map((c, i) => (
-                <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors">
+            <div className={`space-y-2.5 transition-opacity duration-150 ${topCustomersLoading ? "opacity-60" : ""}`}>
+              {topCustomers.map((c, i) => (
+                <div key={c.customer_id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <span className={`w-6 h-6 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 ${
                       i === 0 ? "bg-amber-500 text-slate-950" : i === 1 ? "bg-slate-300 text-slate-900" : i === 2 ? "bg-amber-700/60 text-white" : "bg-muted text-muted-foreground"

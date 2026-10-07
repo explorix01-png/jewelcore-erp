@@ -13,6 +13,7 @@ import { db } from './db/database.js';
 import { initSchema, ENTITY_TABLES } from './db/schema.js';
 import { entityService } from './db/entityService.js';
 import { getUserFromRequest } from './shared/createClient.js';
+import { requestLogger } from './middleware/requestLogger.js';
 
 dotenv.config();
 
@@ -50,6 +51,9 @@ if (corsOrigin && corsOrigin !== '*') {
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Request start/end logging with response time (API routes only)
+app.use('/api', requestLogger);
 
 // Ensure upload directories exist (configurable for persistent volume mounts)
 const uploadsDir = process.env.UPLOADS_DIR
