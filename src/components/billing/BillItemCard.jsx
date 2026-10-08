@@ -34,6 +34,10 @@ export default function BillItemCard({ row, index, mode, calc, t, updateRow, rem
         )}
         {mode === "manual" && (
           <>
+            <div className="col-span-2">
+              <Label className="text-xs">{t("inventory.huid")}</Label>
+              <Input type="text" className="h-8 text-xs font-mono" value={row.huid || ""} onChange={(e) => updateRow(index, "huid", e.target.value)} placeholder={t("inventory.huidPlaceholder")} />
+            </div>
             <div>
               <Label className="text-xs">{t("billing.metalType")}</Label>
               <Select value={row.metal_type || "gold"} onValueChange={(v) => updateRow(index, "metal_type", v)}>

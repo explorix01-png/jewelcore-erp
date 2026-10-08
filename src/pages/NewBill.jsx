@@ -240,14 +240,16 @@ export default function NewBill() {
 
   const addManualRow = () => {
     setRows((prev) => [...prev, {
-      item_name: "", item_code: "", category_name: "", metal_type: "gold", purity_display: "", hsn: "",
-      quantity: 1, gross_weight: 0, stone_weight: 0, net_weight: 0, wastage: 0, wastage_type: "percentage", purity_value: 0,
+      item_name: "", item_code: "", huid: "", category_name: "", metal_type: "gold", purity_display: "", hsn: "",
+      // Numeric inputs start blank (not 0) so the user can type straight away;
+      // calcBill/finalizeBill coerce "" to 0.
+      quantity: 1, gross_weight: "", stone_weight: "", net_weight: "", wastage: "", wastage_type: "percentage", purity_value: "",
       // Manual jewellery: the rate fills in when a purity is picked. Gold/silver
       // purchases have no purity picker, so they start from the base rate.
-      rate_per_gram: mode === "customer_purchase" ? rateFor("gold", "") : 0,
+      rate_per_gram: mode === "customer_purchase" ? (rateFor("gold", "") || "") : "",
       making_charge: settings?.making_charge_default || 8,
       making_charge_type: settings?.making_charge_type_default || "percentage",
-      hallmarking_charge: 0, discount: 0, gst_rate: (gstConfigs[0]?.gst_rate) || 3,
+      hallmarking_charge: "", discount: "", gst_rate: (gstConfigs[0]?.gst_rate) || 3,
     }]);
   };
 
@@ -611,6 +613,9 @@ export default function NewBill() {
                               <><p className="font-medium">{r.item_name}</p>{r.huid && <p className="text-[10px] text-blue-700 font-mono">HUID: {r.huid}</p>}<p className="text-muted-foreground">{r.purity_display} · {r.hsn || "—"}</p></>
                             ) : (
                               <Input type="text" className="h-7 w-36 text-xs" value={r.item_name} onChange={(e) => updateRow(i, "item_name", e.target.value)} placeholder={t("billing.item")} />
+                            )}
+                            {mode === "manual" && (
+                              <Input type="text" className="h-6 w-36 text-[10px] mt-1 font-mono" value={r.huid || ""} onChange={(e) => updateRow(i, "huid", e.target.value)} placeholder={t("inventory.huidPlaceholder")} aria-label={t("inventory.huid")} />
                             )}
                             {mode === "manual" && (
                               <div className="flex gap-1 mt-1">

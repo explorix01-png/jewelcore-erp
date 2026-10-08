@@ -50,21 +50,22 @@ export function findPurity(purities, metalType, purityDisplay) {
 export function applyRowChange(row, field, value, ctx = {}) {
   const next = { ...row, [field]: value };
 
+  // Calculated/derived numeric inputs show blank rather than 0 until there is a value.
   if (field === "gross_weight" || field === "stone_weight") {
-    next.net_weight = calcNetWeight(next.gross_weight, next.stone_weight);
+    next.net_weight = calcNetWeight(next.gross_weight, next.stone_weight) || "";
   }
 
   if (field === "metal_type") {
     next.purity_display = "";
-    next.purity_value = 0;
+    next.purity_value = "";
     // Gold/silver purchases have no purity picker, so start from the metal's base rate.
-    next.rate_per_gram = ctx.mode === "customer_purchase" ? findRate(ctx.rates, value, "") : 0;
+    next.rate_per_gram = (ctx.mode === "customer_purchase" ? findRate(ctx.rates, value, "") : 0) || "";
   }
 
   if (field === "purity_display") {
     const purity = findPurity(ctx.purities, next.metal_type, value);
-    next.purity_value = purity ? toNumber(purity.purity_value) : 0;
-    next.rate_per_gram = findRate(ctx.rates, next.metal_type, value);
+    next.purity_value = purity ? toNumber(purity.purity_value) : "";
+    next.rate_per_gram = findRate(ctx.rates, next.metal_type, value) || "";
   }
 
   return next;
