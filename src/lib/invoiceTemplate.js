@@ -1,7 +1,7 @@
 // Reusable jewellery tax-invoice template — shared by Print, PDF and WhatsApp.
 // Layout follows the traditional Indian jeweller's tax invoice: letterhead band,
 // TAX INVOICE title with number/date, seller | customer boxes, a ruled item table
-// (SC, HSN, CT, Rate/10gm, GW, NW, Value Addition, Amount), then amount in words,
+// (SC, HSN, CT, Rate/10gm, GW, NW, Making Charges %, Amount), then amount in words,
 // payment details and a totals ladder beside the QR / signature boxes, and a
 // contact footer band.
 // All values come from the finalized Bill + BillItem snapshots + ShopSettings.
@@ -123,23 +123,29 @@ export function invoiceStyles(paperSize) {
 
 // ---------- data shaping (formatting only — never recalculating the bill) ----------
 
-// Per-line figures from the BillItem snapshot. "Amount" is metal value + value
-// addition (making, plus legacy wastage) — i.e. before hallmarking and discount,
-// which the totals ladder lists separately.
+// The Making Charges column prints a percentage. A %-type charge prints as it was
+// entered; per-gram and per-piece charges print as their equivalent % of the metal value.
+function makingPercent(it) {
+  if ((it.making_charge_type || "percentage") === "percentage") return num(it.making_charge);
+  const metalValue = num(it.metal_value);
+  return metalValue > 0 ? (num(it.making_amount) / metalValue) * 100 : 0;
+}
+const percent = (v) => `${Number(num(v).toFixed(2))}%`;
+
+// Per-line figures from the BillItem snapshot. "Amount" is metal value + making
+// (plus legacy wastage) — i.e. before hallmarking and discount, which the totals
+// ladder lists separately.
 function lineFigures(it) {
   const qty = num(it.quantity);
   const hallmarking = num(it.hallmarking_charge) * qty;
-  const amount = num(it.taxable_amount) + num(it.discount) - hallmarking;
-  const metalValue = num(it.metal_value);
   return {
     qty,
     gross: num(it.gross_weight) * qty,
     net: num(it.net_weight) * qty,
     rate10: num(it.rate_per_gram) * 10,
     hallmarking,
-    amount,
-    // Older snapshots without metal_value fall back to the saved making amount.
-    valueAddition: metalValue > 0 ? amount - metalValue : num(it.making_amount),
+    amount: num(it.taxable_amount) + num(it.discount) - hallmarking,
+    makingPct: makingPercent(it),
     discount: num(it.discount),
     gst: num(it.gst_amount),
   };
@@ -154,6 +160,7 @@ function itemRow(it, fig, index) {
       <td class="c">${index + 1}</td>
       <td class="left"><strong>${esc(it.item_name || "—")}</strong>${fig.qty !== 1 ? ` <span class="muted">× ${fig.qty}</span>` : ""}
         ${num(it.wastage_weight) > 0 ? `<div class="muted tiny">Wastage ${weight(it.wastage_weight)} g</div>` : ""}
+        ${!it.wastage_type && num(it.wastage) > 0 ? `<div class="muted tiny">Wastage ${percent(it.wastage)}</div>` : ""}
         ${it.huid ? `<div class="muted tiny">HUID: ${esc(it.huid)}</div>` : ""}</td>
       <td class="c">${esc(it.item_code || "")}</td>
       <td class="c">${esc(it.hsn || "")}</td>
@@ -161,7 +168,7 @@ function itemRow(it, fig, index) {
       <td class="right">${money(fig.rate10)}</td>
       <td class="right">${weight(fig.gross)}</td>
       <td class="right">${weight(fig.net)}</td>
-      <td class="right">${money(fig.valueAddition)}</td>
+      <td class="right">${percent(fig.makingPct)}</td>
       <td class="right">${money(fig.amount)}</td>
     </tr>`;
 }
@@ -187,7 +194,7 @@ function itemsTable(items, figures, isA5) {
       <th>Rate<small>/ 10 gm</small></th>
       <th>GW</th>
       <th>NW</th>
-      <th>Value Addition</th>
+      <th>Making Charges</th>
       <th>Amount</th>
     </tr></thead>
     <tbody>
@@ -197,7 +204,7 @@ function itemsTable(items, figures, isA5) {
         <td></td><td class="left">Total</td><td></td><td></td><td></td><td></td>
         <td class="right">${weight(sum("gross"))}</td>
         <td class="right">${weight(sum("net"))}</td>
-        <td class="right">${money(sum("valueAddition"))}</td>
+        <td></td>
         <td class="right">${money(sum("amount"))}</td>
       </tr>
     </tbody>
