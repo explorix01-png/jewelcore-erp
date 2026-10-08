@@ -29,7 +29,12 @@ function parseJson(value, fallback) {
 // apply whether rendered in a print window (<body class>) or an offscreen PDF container.
 export function invoiceStyles(paperSize) {
   const isA5 = paperSize === "A5";
-  const pageRule = isA5 ? "size: A5 portrait; margin: 8mm;" : "size: A4 portrait; margin: 10mm;";
+  // The safe margin is part of the invoice itself (padding), not just the @page margin:
+  // Chrome's "Margins: None" print setting (it remembers it between prints) zeroes the
+  // @page margin, and a printer cannot print the outer few mm — the edges got cut off.
+  // @page keeps only a small top/bottom margin for the pages of a multi-page invoice.
+  const pageRule = isA5 ? "size: A5 portrait; margin: 5mm 0;" : "size: A4 portrait; margin: 6mm 0;";
+  const printPad = isA5 ? "5mm 8mm" : "6mm 10mm";
   const baseFont = isA5 ? "7.5px" : "10px";
   const cellFont = isA5 ? "7px" : "9px";
   const tinyFont = isA5 ? "6px" : "7.5px";
@@ -105,7 +110,7 @@ export function invoiceStyles(paperSize) {
     .computer { margin-top: 4px; text-align: center; font-size: ${tinyFont}; color: #555; }
 
     @media print {
-      .invoice-page { padding: 0; }
+      .invoice-page { padding: ${printPad}; }
       @page { ${pageRule} }
     }
   `;
