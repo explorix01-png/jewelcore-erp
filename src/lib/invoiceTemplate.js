@@ -35,6 +35,11 @@ export function invoiceStyles(paperSize) {
   // @page keeps only a small top/bottom margin for the pages of a multi-page invoice.
   const pageRule = isA5 ? "size: A5 portrait; margin: 5mm 0;" : "size: A4 portrait; margin: 6mm 0;";
   const printPad = isA5 ? "5mm 8mm" : "6mm 10mm";
+  // Printed invoices sit in the vertical middle of the sheet: the container is as tall as the
+  // printable area (in print, 100vh is the page height minus whatever margins are in effect;
+  // 2mm is shaved off so rounding never adds a blank page) and centres its content.
+  // A bill taller than one page just flows onto the next.
+  const printMinHeight = "calc(100vh - 2mm)";
   const baseFont = isA5 ? "7.5px" : "10px";
   const cellFont = isA5 ? "7px" : "9px";
   const tinyFont = isA5 ? "6px" : "7.5px";
@@ -110,7 +115,7 @@ export function invoiceStyles(paperSize) {
     .computer { margin-top: 4px; text-align: center; font-size: ${tinyFont}; color: #555; }
 
     @media print {
-      .invoice-page { padding: ${printPad}; }
+      .invoice-page { padding: ${printPad}; min-height: ${printMinHeight}; display: flex; flex-direction: column; justify-content: center; }
       @page { ${pageRule} }
     }
   `;
