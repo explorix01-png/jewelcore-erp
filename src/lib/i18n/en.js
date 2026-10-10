@@ -374,6 +374,8 @@ export const en = {
     "karagir.viewOrders": "View Orders",
     "karagir.noOrdersAssigned": "No customer orders assigned",
     "inventory.jewelleryId": "HUID",
+    "inventory.supplierCode": "Supplier Code (SC)",
+    "billing.roundOff": "Round off",
     "inventory.internalCode": "Internal Code",
     "karagir.noOrdersAssignedDesc": "No customer orders are currently assigned to this karagir.",
 

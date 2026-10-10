@@ -45,6 +45,7 @@ export default function ItemDetailsDialog({ item, onClose, onEdit, onBarcode, on
               <InfoRow label={t("billing.category")} value={item.category_name} />
               <InfoRow label={t("billing.purity")} value={item.purity_display} />
               <InfoRow label={t("billing.hsn")} value={item.hsn} />
+              <InfoRow label={t("inventory.supplierCode")} value={item.supplier_code} mono />
             </div>
           </div>
           <div className="rounded-lg border p-3">

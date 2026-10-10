@@ -182,7 +182,7 @@ export default function NewBill() {
     const grossPerPiece = Number(inv.gross_weight) / perPieceDivisor;
     const netPerPiece = Number(inv.net_weight) / perPieceDivisor;
     setRows((prev) => [...prev, {
-      item_id: inv.item_id, item_name: inv.item_name, item_code: inv.item_code, huid: inv.huid || "", category_name: inv.category_name,
+      item_id: inv.item_id, item_name: inv.item_name, item_code: inv.item_code, huid: inv.huid || "", supplier_code: inv.supplier_code || "", category_name: inv.category_name,
       metal_type: inv.metal_type, purity_display: inv.purity_display, hsn: inv.hsn,
       quantity: 1,
       gross_weight: grossPerPiece,
@@ -240,7 +240,7 @@ export default function NewBill() {
 
   const addManualRow = () => {
     setRows((prev) => [...prev, {
-      item_name: "", item_code: "", huid: "", category_name: "", metal_type: "gold", purity_display: "", hsn: "",
+      item_name: "", item_code: "", huid: "", supplier_code: "", category_name: "", metal_type: "gold", purity_display: "", hsn: "",
       // Numeric inputs start blank (not 0) so the user can type straight away;
       // calcBill/finalizeBill coerce "" to 0.
       quantity: 1, gross_weight: "", stone_weight: "", net_weight: "", wastage: "", wastage_type: "percentage", purity_value: "",
@@ -258,7 +258,7 @@ export default function NewBill() {
   )));
   const removeRow = (i) => setRows((prev) => prev.filter((_, idx) => idx !== i));
 
-  const calc = useMemo(() => calcBill(rows, Number(billDiscount) || 0, gstConfigs[0], { gst_enabled: gstEnabled, gst_mode: gstMode, other_charges: Number(otherCharges) || 0 }), [rows, billDiscount, gstConfigs, gstEnabled, gstMode, otherCharges]);
+  const calc = useMemo(() => calcBill(rows, Number(billDiscount) || 0, gstConfigs[0], { gst_enabled: gstEnabled, gst_mode: gstMode, other_charges: Number(otherCharges) || 0, round_total: true }), [rows, billDiscount, gstConfigs, gstEnabled, gstMode, otherCharges]);
 
   const charges = useMemo(() => calcChargeBreakdown(calc.items), [calc.items]);
 
@@ -425,6 +425,7 @@ export default function NewBill() {
         items: rows.map((r) => ({
           inventory_id: r._invId, item_id: r.item_id, item_name: r.item_name, item_code: r.item_code,
           huid: r.huid || "",
+          supplier_code: r.supplier_code || "",
           category_name: r.category_name, metal_type: r.metal_type, purity_display: r.purity_display,
           hsn: r.hsn, quantity: Number(r.quantity), gross_weight: Number(r.gross_weight),
           stone_weight: Number(r.stone_weight), net_weight: Number(r.net_weight), wastage: Number(r.wastage),
@@ -610,12 +611,15 @@ export default function NewBill() {
                         <tr key={i}>
                           <td className="px-3 py-2">
                             {mode === "inventory" ? (
-                              <><p className="font-medium">{r.item_name}</p>{r.huid && <p className="text-[10px] text-blue-700 font-mono">HUID: {r.huid}</p>}<p className="text-muted-foreground">{r.purity_display} · {r.hsn || "—"}</p></>
+                              <><p className="font-medium">{r.item_name}</p>{r.huid && <p className="text-[10px] text-blue-700 font-mono">HUID: {r.huid}</p>}{r.supplier_code && <p className="text-[10px] text-muted-foreground font-mono">SC: {r.supplier_code}</p>}<p className="text-muted-foreground">{r.purity_display} · {r.hsn || "—"}</p></>
                             ) : (
                               <Input type="text" className="h-7 w-36 text-xs" value={r.item_name} onChange={(e) => updateRow(i, "item_name", e.target.value)} placeholder={t("billing.item")} />
                             )}
                             {mode === "manual" && (
                               <Input type="text" className="h-6 w-36 text-[10px] mt-1 font-mono" value={r.huid || ""} onChange={(e) => updateRow(i, "huid", e.target.value)} placeholder={t("inventory.huidPlaceholder")} aria-label={t("inventory.huid")} />
+                            )}
+                            {mode === "manual" && (
+                              <Input type="text" className="h-6 w-36 text-[10px] mt-1 font-mono" value={r.supplier_code || ""} onChange={(e) => updateRow(i, "supplier_code", e.target.value)} placeholder={t("inventory.supplierCode")} aria-label={t("inventory.supplierCode")} />
                             )}
                             {mode === "manual" && (
                               <div className="flex gap-1 mt-1">
@@ -846,6 +850,9 @@ export default function NewBill() {
               )}
               {gstEnabled && gstMode === "inter" && (
                 <div className="flex justify-between"><span className="text-muted-foreground">{t("invoice.igst")}</span><span>{fmt(calc.igst)}</span></div>
+              )}
+              {calc.roundOff !== 0 && (
+                <div className="flex justify-between"><span className="text-muted-foreground">{t("billing.roundOff")}</span><span>{fmt(calc.roundOff)}</span></div>
               )}
               <div className="flex justify-between font-semibold text-base border-t pt-2 mt-2"><span>{t("billing.total")}</span><span>{fmt(calc.totalAmount)}</span></div>
               <div className="mt-3 pt-3 border-t space-y-2">

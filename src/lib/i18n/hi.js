@@ -305,6 +305,8 @@ export const hi = {
     "karagir.specialization": "विशेषज्ञता",
     "karagir.assigned": "असाइन किए गए",
     "inventory.jewelleryId": "HUID",
+    "inventory.supplierCode": "सप्लायर कोड (SC)",
+    "billing.roundOff": "राउंड ऑफ",
     "inventory.internalCode": "आंतरिक कोड",
     "karagir.pending": "लंबित",
     "karagir.completed": "पूर्ण",

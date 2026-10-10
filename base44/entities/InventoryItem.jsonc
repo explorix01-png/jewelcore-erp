@@ -18,6 +18,10 @@
       "type": "string",
       "description": "Hallmark Unique ID (BIS). Optional \u2014 only required when ShopSettings.huid_enabled is ON. Must be unique."
     },
+    "supplier_code": {
+      "type": "string",
+      "description": "Supplier Code (SC). Optional \u2014 the supplier's own code for this item; printed in the SC column of the invoice."
+    },
     "category_name": {
       "type": "string"
     },

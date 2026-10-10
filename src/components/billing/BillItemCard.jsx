@@ -24,6 +24,7 @@ export default function BillItemCard({ row, index, mode, calc, t, updateRow, rem
           <div className="col-span-2">
             <p className="font-medium text-sm">{row.item_name}</p>
             {row.huid && <p className="text-[10px] text-blue-700 font-mono">HUID: {row.huid}</p>}
+            {row.supplier_code && <p className="text-[10px] text-muted-foreground font-mono">SC: {row.supplier_code}</p>}
             <p className="text-muted-foreground text-xs">{row.purity_display} · {row.hsn || "—"}</p>
           </div>
         ) : (
@@ -37,6 +38,10 @@ export default function BillItemCard({ row, index, mode, calc, t, updateRow, rem
             <div className="col-span-2">
               <Label className="text-xs">{t("inventory.huid")}</Label>
               <Input type="text" className="h-8 text-xs font-mono" value={row.huid || ""} onChange={(e) => updateRow(index, "huid", e.target.value)} placeholder={t("inventory.huidPlaceholder")} />
+            </div>
+            <div className="col-span-2">
+              <Label className="text-xs">{t("inventory.supplierCode")}</Label>
+              <Input type="text" className="h-8 text-xs font-mono" value={row.supplier_code || ""} onChange={(e) => updateRow(index, "supplier_code", e.target.value)} />
             </div>
             <div>
               <Label className="text-xs">{t("billing.metalType")}</Label>

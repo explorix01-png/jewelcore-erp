@@ -127,7 +127,12 @@ export function calcBill(items, billDiscount = 0, gstConfig = null, options = {}
     cgst = round(totalGst / 2);
     sgst = round(totalGst - cgst);
   }
-  const totalAmount = round(afterDiscount + (effectiveGst ? cgst + sgst + igst : 0));
+  const exactTotal = round(afterDiscount + (effectiveGst ? cgst + sgst + igst : 0));
+  // Customer invoices settle in whole rupees: 0.50 and above rounds up, below 0.50 rounds
+  // down (9250.52 → 9251, 9250.49 → 9250). Opt-in via round_total so supplier purchases,
+  // which share this engine, keep their exact total. roundOff = totalAmount − exact total.
+  const totalAmount = options.round_total === true ? Math.round(exactTotal) : exactTotal;
+  const roundOff = round(totalAmount - exactTotal);
   return {
     items: computed,
     subtotal,
@@ -140,6 +145,7 @@ export function calcBill(items, billDiscount = 0, gstConfig = null, options = {}
     igst,
     totalGst: effectiveGst ? totalGst : 0,
     totalAmount,
+    roundOff,
     gstEnabled,
     gstMode: effectiveGst ? gstMode : "none",
   };

@@ -64,7 +64,7 @@ export default function NewItemDialog({ open, onClose, onDone, metal: lockedMeta
       const res = await base44.functions.invoke("manageItem", {
         action: "create_with_stock",
         data: {
-          item_code: f.item_code, item_name: f.item_name, barcode: f.barcode, huid: f.huid,
+          item_code: f.item_code, item_name: f.item_name, barcode: f.barcode, huid: f.huid, supplier_code: f.supplier_code,
           metal_type: f.metal_type, category_id: f.category_id, purity_id: f.purity_id,
           hsn: f.hsn, quantity: Number(f.quantity), gross_weight: Number(f.gross_weight),
           stone_weight: Number(f.stone_weight) || 0, net_weight: Number(f.net_weight),
@@ -122,7 +122,10 @@ export default function NewItemDialog({ open, onClose, onDone, metal: lockedMeta
               />
             </div>
           </div>
-          <div><Label>{t("billing.hsn")}</Label><Input value={f.hsn} onChange={(e) => set("hsn", e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><Label>{t("billing.hsn")}</Label><Input value={f.hsn} onChange={(e) => set("hsn", e.target.value)} /></div>
+            <div><Label>{t("inventory.supplierCode")}</Label><Input value={f.supplier_code} onChange={(e) => set("supplier_code", e.target.value)} /></div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>{t("common.quantity")} *</Label><Input type="number" value={f.quantity} onChange={(e) => set("quantity", e.target.value)} /></div>
             <div><Label>{t("inv.lowStockThreshold")}</Label><Input type="number" value={f.low_stock_threshold} onChange={(e) => set("low_stock_threshold", e.target.value)} placeholder={t("inv.lowStockHint")} /></div>
@@ -150,7 +153,7 @@ export default function NewItemDialog({ open, onClose, onDone, metal: lockedMeta
 
 function emptyForm(lockedMetal) {
   return {
-    item_code: "", item_name: "", barcode: "", huid: "",
+    item_code: "", item_name: "", barcode: "", huid: "", supplier_code: "",
     metal_type: lockedMetal || "gold",
     category_id: "", purity_id: "", hsn: "",
     quantity: 0, gross_weight: 0, stone_weight: 0, net_weight: 0,

@@ -44,6 +44,7 @@ export default async function(req) {
       }
       const providedBarcode = str(d.barcode);
       const huid = str(d.huid);
+      const supplierCode = str(d.supplier_code);
 
       if (!itemName) return Response.json({ error: 'Item Name is required' }, { status: 400 });
       if (!metal) return Response.json({ error: 'Metal is required' }, { status: 400 });
@@ -113,6 +114,7 @@ export default async function(req) {
         item_code: itemCode,
         barcode,
         huid,
+        supplier_code: supplierCode,
         category_name: str(category.name),
         metal_type: metal,
         purity_display: str(purity.display_format),
@@ -182,6 +184,8 @@ export default async function(req) {
       const isActive = d.is_active !== undefined ? d.is_active !== false : (master ? master.is_active : true);
       const newBarcode = str(d.barcode);
       const newHuid = str(d.huid);
+      // Supplier Code (SC): left unchanged when the caller doesn't send it.
+      const finalSupplierCode = d.supplier_code !== undefined ? str(d.supplier_code) : (inv.supplier_code || '');
 
       if (!itemName || !metal) return Response.json({ error: 'Item Name and Metal are required' }, { status: 400 });
 
@@ -284,6 +288,7 @@ export default async function(req) {
         item_code: itemCode,
         barcode: finalBarcode,
         huid: finalHuid,
+        supplier_code: finalSupplierCode,
         category_name: categoryName,
         metal_type: metal,
         purity_display: purityDisplay,

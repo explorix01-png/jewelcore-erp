@@ -1,8 +1,8 @@
 // Reusable jewellery tax-invoice template — shared by Print, PDF and WhatsApp.
 // Layout follows the traditional Indian jeweller's tax invoice: letterhead band,
-// TAX INVOICE title with number/date, seller | customer boxes, a ruled item table
-// (SC, HSN, CT, Rate/10gm, GW, NW, Making Charges %, Amount), then amount in words,
-// payment details and a totals ladder beside the QR / signature boxes, and a
+// TAX INVOICE title with number/date, seller | customer boxes, a ruled item table (gold
+// and silver have their own column layouts — see GOLD_/SILVER_COLUMN_WIDTHS), then amount
+// in words, payment details and a totals ladder beside the QR / signature boxes, and a
 // contact footer band.
 // All values come from the finalized Bill + BillItem snapshots + ShopSettings.
 // This module NEVER recalculates the bill; it only formats snapshotted values.
@@ -70,6 +70,7 @@ export function invoiceStyles(paperSize) {
     .party .split { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
     .party .name { font-weight: 700; text-transform: uppercase; }
 
+    .rate-line { padding: 3px 8px; text-align: center; font-weight: 700; font-size: ${cellFont}; border-bottom: 1px solid #000; overflow-wrap: anywhere; }
     table.items { width: 100%; border-collapse: collapse; table-layout: fixed; }
     thead { display: table-header-group; }
     table.items th { padding: 3px 3px; font-size: ${cellFont}; font-weight: 700; text-align: center; vertical-align: middle; border-bottom: 1px solid #000; border-right: 1px solid #000; overflow-wrap: anywhere; line-height: 1.25; }
@@ -123,46 +124,141 @@ export function invoiceStyles(paperSize) {
 
 // ---------- data shaping (formatting only — never recalculating the bill) ----------
 
-// The Making Charges column prints a percentage. A %-type charge prints as it was
-// entered; per-gram and per-piece charges print as their equivalent % of the metal value.
-function makingPercent(it) {
-  if ((it.making_charge_type || "percentage") === "percentage") return num(it.making_charge);
-  const metalValue = num(it.metal_value);
-  return metalValue > 0 ? (num(it.making_amount) / metalValue) * 100 : 0;
+// The Making Charges column prints a percentage. A %-type charge prints as it was entered;
+// per-gram / per-piece charges (and legacy wastage, charged as a % of the metal value) print
+// as the equivalent % of the metal value.
+function makingPercent(it, price, addition) {
+  const legacyWastage = !it.wastage_type && num(it.wastage) > 0;
+  if (!legacyWastage && (it.making_charge_type || "percentage") === "percentage") return num(it.making_charge);
+  return price > 0 ? (addition / price) * 100 : 0;
 }
 const percent = (v) => `${Number(num(v).toFixed(2))}%`;
 
-// Per-line figures from the BillItem snapshot. "Amount" is metal value + making
-// (plus legacy wastage) — i.e. before hallmarking and discount, which the totals
+// Purity as a percentage (e.g. 91.6), whether the master stored it as karat (22) or a percentage.
+function purityPercent(it) {
+  const p = num(it.purity_value);
+  const pct = p > 0 && p <= 24 ? (p / 24) * 100 : p;
+  return pct > 0 ? String(Number(pct.toFixed(2))) : "";
+}
+
+// Per-line figures from the BillItem snapshot. "Amount" is the gross product price (metal
+// value) + making (plus legacy wastage) — before hallmarking and discount, which the totals
 // ladder lists separately.
 function lineFigures(it) {
   const qty = num(it.quantity);
   const hallmarking = num(it.hallmarking_charge) * qty;
+  const amount = num(it.taxable_amount) + num(it.discount) - hallmarking;
+  const metalValue = num(it.metal_value);
+  // Older snapshots without metal_value fall back to the saved making amount.
+  const addition = metalValue > 0 ? amount - metalValue : num(it.making_amount);
+  const price = amount - addition;
   return {
     qty,
     gross: num(it.gross_weight) * qty,
+    less: num(it.stone_weight) * qty,
     net: num(it.net_weight) * qty,
     rate10: num(it.rate_per_gram) * 10,
     hallmarking,
-    amount: num(it.taxable_amount) + num(it.discount) - hallmarking,
-    makingPct: makingPercent(it),
+    price,       // gross product price: net weight × rate
+    addition,    // making charges (+ legacy wastage), in rupees
+    amount,
+    makingPct: makingPercent(it, price, addition),
     discount: num(it.discount),
     gst: num(it.gst_amount),
   };
 }
 
-const ITEM_COLUMN_WIDTHS = [4, 30, 9, 8, 6, 10, 8, 8, 8, 9];
+// Two item-table layouts, chosen per metal:
+//  - Gold:   Sr.No | Product description (purity, HUID, SC) | Purity / HSN | Net Qty | Gross wt |
+//            Less wt | Net metal wt | Gross product price | Hallmarking | Making charges /
+//            Wastage % (amount over %) | Amount
+//  - Silver: Sr.No | Particulars | SC | HSN | CT | Rate/10gm | GW | NW | Making charges % | Amount
+const GOLD_COLUMN_WIDTHS = [4, 18, 8, 5, 9, 8, 9, 10, 9, 10, 10];
+const SILVER_COLUMN_WIDTHS = [4, 30, 9, 8, 6, 10, 8, 8, 8, 9];
 
-function itemRow(it, fig, index) {
+function ruledTable(widths, head, rows, totalRow, fillerMm) {
+  const filler = fillerMm > 0
+    ? `<tr class="filler" style="height:${fillerMm}mm">${widths.map(() => "<td></td>").join("")}</tr>`
+    : "";
+  return `
+  <table class="items">
+    <colgroup>${widths.map((w) => `<col style="width:${w}%">`).join("")}</colgroup>
+    <thead><tr>${head}</tr></thead>
+    <tbody>${rows}${filler}<tr class="total-row">${totalRow}</tr></tbody>
+  </table>`;
+}
+
+// "Gold 22K : - 13890" — the rate per gram of each metal / purity on the gold items.
+function goldRateLine(entries) {
+  const rates = new Map();
+  for (const { it } of entries) {
+    const rate = num(it.rate_per_gram);
+    const metal = String(it.metal_type || "gold");
+    const key = `${metal.charAt(0).toUpperCase()}${metal.slice(1)} ${it.purity_display || ""}`.trim();
+    if (rate > 0 && !rates.has(key)) rates.set(key, rate);
+  }
+  if (rates.size === 0) return "";
+  const parts = [...rates].map(([label, rate]) => `${esc(label)} : - ${Number(rate.toFixed(2))}`);
+  return `<div class="rate-line">${parts.join(" &nbsp;&nbsp;&nbsp; ")}</div>`;
+}
+
+function goldRow({ it, fig }, index) {
+  return `
+    <tr>
+      <td class="c">${index + 1}</td>
+      <td class="left"><strong>${esc(it.item_name || "—")}</strong>${fig.qty !== 1 ? ` <span class="muted">× ${fig.qty}</span>` : ""}
+        ${it.purity_display ? `<div class="muted">${esc(it.purity_display)}</div>` : ""}
+        ${num(it.wastage_weight) > 0 ? `<div class="muted tiny">Wastage ${weight(it.wastage_weight)} g</div>` : ""}
+        ${it.huid ? `<div class="muted tiny">HUID: ${esc(it.huid)}</div>` : ""}
+        ${it.supplier_code ? `<div class="muted tiny">SC: ${esc(it.supplier_code)}</div>` : ""}</td>
+      <td class="c">${esc(purityPercent(it))}<div class="muted">${esc(it.hsn || "")}</div></td>
+      <td class="c">${fig.qty}</td>
+      <td class="right">${weight(fig.gross)}</td>
+      <td class="right">${fig.less > 0 ? weight(fig.less) : "—"}</td>
+      <td class="right">${weight(fig.net)}</td>
+      <td class="right">${money(fig.price)}</td>
+      <td class="right">${fig.hallmarking > 0 ? money(fig.hallmarking) : "—"}</td>
+      <td class="right">${money(fig.addition)}<div class="muted">${percent(fig.makingPct)}</div></td>
+      <td class="right">${money(fig.amount)}</td>
+    </tr>`;
+}
+
+function goldTable(entries, firstIndex, fillerMm) {
+  const sum = (key) => entries.reduce((s, e) => s + e.fig[key], 0);
+  const head = `
+      <th>Sr.<br>No</th>
+      <th class="left">Product Description<small>Purity / HUID No</small></th>
+      <th>Purity<small>HSN</small></th>
+      <th>Net<br>Qty</th>
+      <th>Gross Product Weight<small>(grams)</small></th>
+      <th>Less / Stone Weight<small>(grams)</small></th>
+      <th>Net Metal Weight<small>(grams)</small></th>
+      <th>Gross Product Price<small>(Rs.)</small></th>
+      <th>Hallmarking<small>(Rs.)</small></th>
+      <th>Making Charges<small>/ Wastage %</small></th>
+      <th>Amount<small>(Rs.)</small></th>`;
+  const totalRow = `
+        <td></td><td class="left">Total</td><td></td>
+        <td class="c">${sum("qty")}</td>
+        <td class="right">${weight(sum("gross"))}</td>
+        <td class="right">${sum("less") > 0 ? weight(sum("less")) : "—"}</td>
+        <td class="right">${weight(sum("net"))}</td>
+        <td class="right">${money(sum("price"))}</td>
+        <td class="right">${sum("hallmarking") > 0 ? money(sum("hallmarking")) : "—"}</td>
+        <td class="right">${money(sum("addition"))}</td>
+        <td class="right">${money(sum("amount"))}</td>`;
+  return ruledTable(GOLD_COLUMN_WIDTHS, head, entries.map((e, i) => goldRow(e, firstIndex + i)).join(""), totalRow, fillerMm);
+}
+
+function silverRow({ it, fig }, index) {
   const metal = it.metal_type ? String(it.metal_type).toUpperCase() : "";
   return `
     <tr>
       <td class="c">${index + 1}</td>
       <td class="left"><strong>${esc(it.item_name || "—")}</strong>${fig.qty !== 1 ? ` <span class="muted">× ${fig.qty}</span>` : ""}
         ${num(it.wastage_weight) > 0 ? `<div class="muted tiny">Wastage ${weight(it.wastage_weight)} g</div>` : ""}
-        ${!it.wastage_type && num(it.wastage) > 0 ? `<div class="muted tiny">Wastage ${percent(it.wastage)}</div>` : ""}
         ${it.huid ? `<div class="muted tiny">HUID: ${esc(it.huid)}</div>` : ""}</td>
-      <td class="c">${esc(it.item_code || "")}</td>
+      <td class="c">${esc(it.supplier_code || "")}</td>
       <td class="c">${esc(it.hsn || "")}</td>
       <td class="c">${esc(it.purity_display || "—")}${metal ? `<div class="muted tiny">${esc(metal)}</div>` : ""}</td>
       <td class="right">${money(fig.rate10)}</td>
@@ -173,19 +269,9 @@ function itemRow(it, fig, index) {
     </tr>`;
 }
 
-function itemsTable(items, figures, isA5) {
-  const sum = (key) => figures.reduce((s, f) => s + f[key], 0);
-  // Short invoices are padded to a minimum item-area height (rows are roughly
-  // 9mm / 7mm tall) so the ruled table keeps the tall look of the traditional bill.
-  const fillerMm = Math.max(0, (isA5 ? 28 : 46) - items.length * (isA5 ? 7 : 9));
-  const filler = fillerMm > 0
-    ? `<tr class="filler" style="height:${fillerMm}mm">${ITEM_COLUMN_WIDTHS.map(() => "<td></td>").join("")}</tr>`
-    : "";
-
-  return `
-  <table class="items">
-    <colgroup>${ITEM_COLUMN_WIDTHS.map((w) => `<col style="width:${w}%">`).join("")}</colgroup>
-    <thead><tr>
+function silverTable(entries, firstIndex, fillerMm) {
+  const sum = (key) => entries.reduce((s, e) => s + e.fig[key], 0);
+  const head = `
       <th>Sr.<br>No</th>
       <th class="left">Particulars</th>
       <th>SC</th>
@@ -195,20 +281,31 @@ function itemsTable(items, figures, isA5) {
       <th>GW</th>
       <th>NW</th>
       <th>Making Charges</th>
-      <th>Amount</th>
-    </tr></thead>
-    <tbody>
-      ${items.map((it, i) => itemRow(it, figures[i], i)).join("")}
-      ${filler}
-      <tr class="total-row">
+      <th>Amount</th>`;
+  const totalRow = `
         <td></td><td class="left">Total</td><td></td><td></td><td></td><td></td>
         <td class="right">${weight(sum("gross"))}</td>
         <td class="right">${weight(sum("net"))}</td>
         <td></td>
-        <td class="right">${money(sum("amount"))}</td>
-      </tr>
-    </tbody>
-  </table>`;
+        <td class="right">${money(sum("amount"))}</td>`;
+  return ruledTable(SILVER_COLUMN_WIDTHS, head, entries.map((e, i) => silverRow(e, firstIndex + i)).join(""), totalRow, fillerMm);
+}
+
+// Gold (and any non-silver metal) items go in the gold layout, silver items in the silver
+// layout; a bill with both prints one table of each, numbered continuously.
+function itemsSection(items, figures, isA5) {
+  const entries = items.map((it, i) => ({ it, fig: figures[i] }));
+  const isSilver = ({ it }) => String(it.metal_type || "").toLowerCase() === "silver";
+  const gold = entries.filter((e) => !isSilver(e));
+  const silver = entries.filter(isSilver);
+  // Short invoices are padded to a minimum item-area height (rows are roughly 9mm / 7mm
+  // tall) so the ruled table keeps the tall look of the traditional bill. The padding goes
+  // on the last table.
+  const fillerMm = Math.max(0, (isA5 ? 28 : 46) - items.length * (isA5 ? 7 : 9));
+  const parts = [];
+  if (gold.length) parts.push(goldRateLine(gold) + goldTable(gold, 0, silver.length ? 0 : fillerMm));
+  if (silver.length) parts.push(silverTable(silver, gold.length, fillerMm));
+  return parts.join("");
 }
 
 // The bill-level figures the totals ladder prints. Tax comes from the amounts
@@ -385,7 +482,7 @@ export function invoiceBody({ bill, items, shop, customer }, opts = {}) {
       <div class="doc">No. : ${esc(bill.bill_number)}<br>Date : ${esc(dateStr)}</div>
     </div>
     <div class="party">${sellerBlock(shop)}${customerBlock(bill, customer)}</div>
-    ${itemsTable(items, figures, isA5)}
+    ${itemsSection(items, figures, isA5)}
     <div class="bottom">
       <div class="bottom-left">
         <div class="words-pay">

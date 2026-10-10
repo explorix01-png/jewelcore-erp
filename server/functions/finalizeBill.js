@@ -211,7 +211,8 @@ export default async function(req) {
       const purityValue = num(it.purity_value) > 0 ? num(it.purity_value) : (purity ? Number(purity.purity_value) : 0);
       const inv = billSource === 'inventory' ? inventoryMap.get(str(it.inventory_id)) : null;
       const huid = inv?.huid || str(it.huid) || '';
-      return { ...it, rate_per_gram: rate, hallmarking_charge: num(it.hallmarking_charge), stone_weight: num(it.stone_weight), purity_value: purityValue, huid };
+      const supplierCode = inv?.supplier_code || str(it.supplier_code) || '';
+      return { ...it, rate_per_gram: rate, hallmarking_charge: num(it.hallmarking_charge), stone_weight: num(it.stone_weight), purity_value: purityValue, huid, supplier_code: supplierCode };
     });
     for (const it of normalizedItems) {
       if (num(it.rate_per_gram) <= 0) return Response.json({ error: `No rate available for ${str(it.item_name)}` }, { status: 400 });
@@ -225,7 +226,8 @@ export default async function(req) {
     const effectiveGstRate = gstEnabled && gstConfig ? Number(gstConfig.gst_rate) : 0;
 
     // Authoritative calculation
-    const calc = calcBill(normalizedItems, billDiscount, gstConfig, { gst_enabled: gstEnabled, gst_mode: gstMode, other_charges: otherCharges });
+    // Invoices settle in whole rupees (0.50 and above rounds up) — see calcBill's round_total.
+    const calc = calcBill(normalizedItems, billDiscount, gstConfig, { gst_enabled: gstEnabled, gst_mode: gstMode, other_charges: otherCharges, round_total: true });
     const totalSettled = paidAmount;
     const due = computeDue(calc.totalAmount, totalSettled);
     if (paidAmount > calc.totalAmount) return Response.json({ error: 'Paid amount exceeds total' }, { status: 400 });
@@ -284,6 +286,7 @@ export default async function(req) {
           item_name: str(c.item_name),
           item_code: str(c.item_code),
           huid: str(c.huid || ''),
+          supplier_code: str(c.supplier_code || ''),
           category_name: str(c.category_name), metal_type: c.metal_type, purity_display: str(c.purity_display),
           purity_value: num(c.purity_value), fine_weight: calcFineWeight(num(c.net_weight), num(c.purity_value)),
           hsn: str(c.hsn), quantity: num(c.quantity), gross_weight: num(c.gross_weight),

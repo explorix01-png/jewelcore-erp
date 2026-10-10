@@ -23,7 +23,7 @@ export default function EditItemDialog({ item, onClose, onDone }) {
     if (!item) return;
     setErr("");
     setF({
-      item_code: item.item_code || "", item_name: item.item_name || "", barcode: item.barcode || "", huid: item.huid || "",
+      item_code: item.item_code || "", item_name: item.item_name || "", barcode: item.barcode || "", huid: item.huid || "", supplier_code: item.supplier_code || "",
       metal_type: item.metal_type || "gold", category_id: "", purity_id: "",
       hsn: item.hsn || "", low_stock_threshold: item.low_stock_threshold ?? 0,
       is_active: item.is_archived ? false : true,
@@ -79,7 +79,7 @@ export default function EditItemDialog({ item, onClose, onDone }) {
         action: "edit",
         inventory_id: item.id,
         data: {
-          item_code: f.item_code, item_name: f.item_name, barcode: f.barcode, huid: f.huid,
+          item_code: f.item_code, item_name: f.item_name, barcode: f.barcode, huid: f.huid, supplier_code: f.supplier_code,
           metal_type: f.metal_type, category_id: f.category_id, purity_id: f.purity_id,
           hsn: f.hsn, low_stock_threshold: Number(f.low_stock_threshold), is_active: f.is_active,
           ...(stockChanged ? {
@@ -146,7 +146,10 @@ export default function EditItemDialog({ item, onClose, onDone }) {
                   />
                 </div>
               </div>
-              <div><Label>{t("billing.hsn")}</Label><Input value={f.hsn} onChange={(e) => set("hsn", e.target.value)} /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>{t("billing.hsn")}</Label><Input value={f.hsn} onChange={(e) => set("hsn", e.target.value)} /></div>
+                <div><Label>{t("inventory.supplierCode")}</Label><Input value={f.supplier_code} onChange={(e) => set("supplier_code", e.target.value)} /></div>
+              </div>
               {huidEnabled && (
                 <div>
                   <Label>{t("inventory.huid")}</Label>

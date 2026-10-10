@@ -18,6 +18,10 @@
       "type": "string",
       "description": "Hallmark Unique ID snapshot at time of sale \u2014 the jewellery item's official customer-facing identification number"
     },
+    "supplier_code": {
+      "type": "string",
+      "description": "Supplier Code (SC) snapshot at time of sale \u2014 printed in the SC column of the invoice"
+    },
     "category_name": {
       "type": "string"
     },

@@ -1,4 +1,4 @@
-import { sortPuritiesDescending, calcFineWeight } from './shared/billCalc.js';
+import { sortPuritiesDescending, calcFineWeight, calcBill } from './shared/billCalc.js';
 import { seedLocalAdmin } from './db/seedAdmin.js';
 
 const BASE_URL = 'http://localhost:3001';
@@ -82,6 +82,24 @@ async function runTests() {
     throw new Error(`Fine weight calculation mismatch: expected ~3.744, got ${fineWtTest}`);
   }
   console.log(`✓ Fine Weight calculated accurately: 3.880g @ 96.50% = ${fineWtTest}g`);
+
+  // TEST 2b: Whole-rupee invoice total — 0.50 and above rounds up, below 0.50 rounds down.
+  console.log('\n[TEST 2b] Invoice total rounding (round_total)...');
+  // One piece, 1 g, no making / GST: the bill total equals the rate typed in.
+  const totalFor = (rate, roundTotal) => calcBill(
+    [{ item_name: 'Rounding probe', quantity: 1, net_weight: 1, rate_per_gram: rate, making_charge: 0, making_charge_type: 'fixed', gst_rate: 0 }],
+    0, null, { gst_enabled: false, round_total: roundTotal }
+  );
+  for (const [exact, rounded] of [[9250.52, 9251], [9250.49, 9250], [9250.5, 9251], [9250, 9250]]) {
+    const r = totalFor(exact, true);
+    if (r.totalAmount !== rounded) throw new Error(`Total ${exact} should round to ${rounded}, got ${r.totalAmount}`);
+    if (Math.abs(r.roundOff - (rounded - exact)) > 0.001) throw new Error(`Round off for ${exact} should be ${(rounded - exact).toFixed(2)}, got ${r.roundOff}`);
+  }
+  const unrounded = totalFor(9250.52, false);
+  if (unrounded.totalAmount !== 9250.52 || unrounded.roundOff !== 0) {
+    throw new Error(`Without round_total the exact total must be kept, got ${unrounded.totalAmount} (round off ${unrounded.roundOff})`);
+  }
+  console.log('✓ 9250.52 → 9251, 9250.49 → 9250, 9250.50 → 9251; purchases keep the exact total');
 
   // TEST 3: Historical Rate Lookup Endpoint (getEffectiveRates)
   console.log('\n[TEST 3] Historical Rate Lookup API (getEffectiveRates)...');

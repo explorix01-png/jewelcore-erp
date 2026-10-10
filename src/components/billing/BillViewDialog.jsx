@@ -22,6 +22,11 @@ export default function BillViewDialog({ bill, onClose }) {
 
   if (!bill) return null;
 
+  // Whole-rupee rounding on the total: the saved total minus the taxable value and GST (nothing extra is stored).
+  const gstTotal = bill.gst_enabled && bill.gst_mode !== "none" ? Number(bill.cgst || 0) + Number(bill.sgst || 0) + Number(bill.igst || 0) : 0;
+  const taxable = Math.max(0, Number(bill.subtotal || 0) - Number(bill.discount || 0) + Number(bill.other_charges || 0));
+  const roundOff = Number(bill.total_amount || 0) - (taxable + gstTotal);
+
   return (
     <Dialog open={!!bill} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -75,6 +80,7 @@ export default function BillViewDialog({ bill, onClose }) {
             <div className="flex justify-between"><span className="text-muted-foreground">{t("invoice.cgst")}</span><span>{fmt(bill.cgst)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">{t("invoice.sgst")}</span><span>{fmt(bill.sgst)}</span></div>
           </>)}
+          {Math.abs(roundOff) >= 0.005 && <div className="flex justify-between"><span className="text-muted-foreground">{t("billing.roundOff")}</span><span>{fmt(roundOff)}</span></div>}
           <div className="flex justify-between font-semibold border-t pt-1"><span>{t("invoice.totalAmount")}</span><span>{fmt(bill.total_amount)}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">{t("invoice.paid")}</span><span>{fmt(bill.paid_amount)}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">{t("invoice.due")}</span><span className="text-red-600">{fmt(bill.due_amount)}</span></div>
