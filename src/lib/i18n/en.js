@@ -500,6 +500,8 @@ export const en = {
     "settings.subtitle": "Centralized shop configuration",
     "settings.shopName": "Shop Name",
     "settings.ownerName": "Owner Name",
+    "settings.address": "Address",
+    "settings.stateCode": "State Code",
     "settings.logo": "Shop Logo",
     "settings.logoUpload": "Upload Logo",
     "settings.logoHint": "JPG, JPEG, or PNG. Max 2MB.",

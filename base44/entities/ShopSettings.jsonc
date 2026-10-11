@@ -17,6 +17,10 @@
     "state": {
       "type": "string"
     },
+    "state_code": {
+      "type": "string",
+      "description": "GST state code printed beside the shop's state on invoices (e.g. 27 for Maharashtra)"
+    },
     "city": {
       "type": "string"
     },

@@ -352,6 +352,8 @@ export const hi = {
     "settings.subtitle": "केंद्रीकृत दुकान कॉन्फ़िगरेशन",
     "settings.shopName": "दुकान का नाम",
     "settings.ownerName": "मालिक का नाम",
+    "settings.address": "पता",
+    "settings.stateCode": "राज्य कोड",
     "settings.logo": "दुकान लोगो",
     "settings.logoUpload": "लोगो अपलोड करें",
     "settings.logoHint": "JPG, JPEG, या PNG। अधिकतम 2MB।",

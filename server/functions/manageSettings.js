@@ -24,6 +24,7 @@ export default async function(req) {
     if (data.owner_name !== undefined) safeFields.owner_name = str(data.owner_name);
     if (data.address !== undefined) safeFields.address = str(data.address);
     if (data.state !== undefined) safeFields.state = str(data.state);
+    if (data.state_code !== undefined) safeFields.state_code = str(data.state_code);
     if (data.city !== undefined) safeFields.city = str(data.city);
     if (data.pincode !== undefined) safeFields.pincode = str(data.pincode);
     if (data.mobile !== undefined) safeFields.mobile = str(data.mobile);

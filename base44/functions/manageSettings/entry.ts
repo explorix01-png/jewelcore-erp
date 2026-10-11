@@ -20,7 +20,7 @@ export default async function(req) {
 
     const safeFields = {
       shop_name: str(data.shop_name), logo_url: str(data.logo_url), owner_name: str(data.owner_name),
-      address: str(data.address), state: str(data.state), city: str(data.city), pincode: str(data.pincode),
+      address: str(data.address), state: str(data.state), state_code: str(data.state_code), city: str(data.city), pincode: str(data.pincode),
       mobile: str(data.mobile), email: str(data.email), gst_number: str(data.gst_number),
       invoice_prefix: str(data.invoice_prefix), currency: str(data.currency),
       default_language: str(data.default_language), business_type: str(data.business_type),

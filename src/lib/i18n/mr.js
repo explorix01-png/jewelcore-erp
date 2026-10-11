@@ -352,6 +352,8 @@ export const mr = {
     "settings.subtitle": "केंद्रित दुकान कॉन्फिगरेशन",
     "settings.shopName": "दुकान नाव",
     "settings.ownerName": "मालक नाव",
+    "settings.address": "पत्ता",
+    "settings.stateCode": "राज्य कोड",
     "settings.logo": "दुकान लोगो",
     "settings.logoUpload": "लोगो अपलोड करा",
     "settings.logoHint": "JPG, JPEG, किंवा PNG. कमाल 2MB.",

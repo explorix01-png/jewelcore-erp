@@ -17,6 +17,9 @@ const num = (v) => Number(v) || 0;
 const weight = (v) => num(v).toFixed(3);
 // Values that round to zero print as 0.00 — never "-0.00".
 const money = (v) => fmtNum(Math.abs(num(v)) < 0.005 ? 0 : v);
+// Display-only: the Amount totals print as whole rupees (579.73 -> 580.00). Taxable value, GST and the
+// bill total are the saved figures and are not recalculated from this.
+const wholeRupee = (v) => money(Math.round(num(v)));
 const roundCents = (v) => Math.round((num(v) + Number.EPSILON) * 100) / 100;
 
 function parseJson(value, fallback) {
@@ -248,7 +251,7 @@ function goldTable(entries, firstIndex, fillerMm) {
         <td class="right">${money(sum("price"))}</td>
         <td class="right">${sum("hallmarking") > 0 ? money(sum("hallmarking")) : "—"}</td>
         <td class="right">${money(sum("addition"))}</td>
-        <td class="right">${money(sum("amount"))}</td>`;
+        <td class="right">${wholeRupee(sum("amount"))}</td>`;
   return ruledTable(GOLD_COLUMN_WIDTHS, head, entries.map((e, i) => goldRow(e, firstIndex + i)).join(""), totalRow, fillerMm);
 }
 
@@ -289,7 +292,7 @@ function silverTable(entries, firstIndex, fillerMm) {
         <td class="right">${weight(sum("gross"))}</td>
         <td class="right">${weight(sum("net"))}</td>
         <td class="right">${money(sum("addition"))}</td>
-        <td class="right">${money(sum("amount"))}</td>`;
+        <td class="right">${wholeRupee(sum("amount"))}</td>`;
   return ruledTable(SILVER_COLUMN_WIDTHS, head, entries.map((e, i) => silverRow(e, firstIndex + i)).join(""), totalRow, fillerMm);
 }
 
@@ -355,7 +358,7 @@ function totalsPanel(t, bill, isGst, isInter) {
     ? `${row(`CGST ${half} %`, t.cgst)}${row(`SGST ${half} %`, t.sgst)}${row(`IGST ${(isInter ? rate : 0).toFixed(2)} %`, t.igst)}`
     : "";
   return `
-    ${row("Total Amount", t.goodsValue)}
+    ${row("Total Amount", Math.round(t.goodsValue))}
     ${row("Hallmarking Charges", t.hallmarking)}
     ${row("Discount", t.discount > 0 ? -t.discount : 0)}
     ${t.otherCharges > 0 ? row("Other Charges", t.otherCharges) : ""}
@@ -428,8 +431,9 @@ function sellerBlock(shop) {
     <div>
       <div class="line">Name : <span class="name">${esc(shop?.shop_name || "Jewellery Shop")}</span></div>
       ${address ? `<div class="line">Address : ${esc(address)}</div>` : ""}
-      <div class="split"><span>State : ${esc(shop?.state || "")}</span><span>State Code : ${esc(stateCodeFor(shop?.state, gstin))}</span></div>
+      <div class="split"><span>State : ${esc(shop?.state || "")}</span><span>State Code : ${esc(String(shop?.state_code || "").trim() || stateCodeFor(shop?.state, gstin))}</span></div>
       <div class="line">GSTIN : ${esc(gstin || "-")}</div>
+      ${shop?.mobile ? `<div class="line">Mobile No : ${esc(shop.mobile)}</div>` : ""}
     </div>`;
 }
 
@@ -480,7 +484,7 @@ export function invoiceBody({ bill, items, shop, customer }, opts = {}) {
 
   <div class="frame">
     <div class="title-row">
-      <div class="title">${isGst ? "TAX INVOICE" : "INVOICE"}${isGst ? `<div class="sub">Tax Invoice u/s 31(1) of CGST Act 2017</div>` : ""}</div>
+      <div class="title">${isGst ? "TAX INVOICE" : "INVOICE"}</div>
       <div class="doc">No. : ${esc(bill.bill_number)}<br>Date : ${esc(dateStr)}</div>
     </div>
     <div class="party">${sellerBlock(shop)}${customerBlock(bill, customer)}</div>

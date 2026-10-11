@@ -99,8 +99,9 @@ export default function Settings() {
           <div><Label>{t("common.mobile")}</Label><Input value={s.mobile || ""} onChange={(e) => set("mobile", e.target.value)} disabled={!canEdit} /></div>
           <div><Label>Email</Label><Input value={s.email || ""} onChange={(e) => set("email", e.target.value)} disabled={!canEdit} /></div>
           <div><Label>GST Number</Label><Input value={s.gst_number || ""} onChange={(e) => set("gst_number", e.target.value)} disabled={!canEdit} /></div>
+          <div><Label>{t("settings.stateCode")}</Label><Input value={s.state_code || ""} onChange={(e) => set("state_code", e.target.value)} maxLength={4} placeholder="e.g. 27" disabled={!canEdit} /></div>
         </div>
-        <div><Label>{t("common.name")}</Label><Input value={s.address || ""} onChange={(e) => set("address", e.target.value)} disabled={!canEdit} /></div>
+        <div><Label>{t("settings.address")}</Label><Input value={s.address || ""} onChange={(e) => set("address", e.target.value)} disabled={!canEdit} /></div>
 
         {/* Logo Upload */}
         <div>
