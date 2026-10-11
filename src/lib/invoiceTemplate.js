@@ -71,6 +71,7 @@ export function invoiceStyles(paperSize) {
     .party > div + div { border-left: 1px solid #000; }
     .party .line { padding: 1px 0; }
     .party .split { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+    .party .split.left { justify-content: flex-start; gap: 28px; }
     .party .name { font-weight: 700; text-transform: uppercase; }
 
     .rate-line { padding: 3px 8px; text-align: center; font-weight: 700; font-size: ${cellFont}; border-bottom: 1px solid #000; overflow-wrap: anywhere; }
@@ -162,7 +163,7 @@ function lineFigures(it) {
     gross: num(it.gross_weight) * qty,
     less: num(it.stone_weight) * qty,
     net: num(it.net_weight) * qty,
-    rate10: num(it.rate_per_gram) * 10,
+    rate: num(it.rate_per_gram),   // per gram
     hallmarking,
     price,       // gross product price: net weight × rate
     addition,    // making charges (+ legacy wastage), in rupees
@@ -177,7 +178,7 @@ function lineFigures(it) {
 //  - Gold:   Sr.No | Product description (purity, HUID, SC) | Purity / HSN | Net Qty | Gross wt |
 //            Less wt | Net metal wt | Gross product price | Hallmarking | Making charges /
 //            Wastage % (amount over %) | Amount
-//  - Silver: Sr.No | Particulars | SC | HSN | CT | Rate/10gm | GW | NW | Value addition (Rs.) | Amount
+//  - Silver: Sr.No | Particulars | SC | HSN | CT | Rate/gm | GW | NW | Value addition (Rs.) | Amount
 const GOLD_COLUMN_WIDTHS = [4, 18, 8, 5, 9, 8, 9, 10, 9, 10, 10];
 const SILVER_COLUMN_WIDTHS = [4, 30, 9, 8, 6, 10, 8, 8, 8, 9];
 
@@ -266,7 +267,7 @@ function silverRow({ it, fig }, index) {
       <td class="c">${esc(it.supplier_code || "")}</td>
       <td class="c">${esc(it.hsn || "")}</td>
       <td class="c">${esc(it.purity_display || "—")}${metal ? `<div class="muted tiny">${esc(metal)}</div>` : ""}</td>
-      <td class="right">${money(fig.rate10)}</td>
+      <td class="right">${money(fig.rate)}</td>
       <td class="right">${weight(fig.gross)}</td>
       <td class="right">${weight(fig.net)}</td>
       <td class="right">${money(fig.addition)}</td>
@@ -282,7 +283,7 @@ function silverTable(entries, firstIndex, fillerMm) {
       <th>SC</th>
       <th>HSN</th>
       <th>CT</th>
-      <th>Rate<small>/ 10 gm</small></th>
+      <th>Rate<small>/ gm</small></th>
       <th>GW</th>
       <th>NW</th>
       <th>Value<br>Addition</th>
@@ -443,7 +444,7 @@ function customerBlock(bill, customer) {
     <div>
       <div class="line">Name : <span class="name">${esc(bill.customer_name || "")}</span></div>
       <div class="line">Address : ${esc(address)}</div>
-      <div class="split"><span>State : ${esc(bill.customer_state || "")}</span><span>State Code : ${esc(stateCodeFor(bill.customer_state, bill.customer_gst_number))}</span></div>
+      <div class="split left"><span>State : ${esc(bill.customer_state || "")}</span><span>State Code : ${esc(stateCodeFor(bill.customer_state, bill.customer_gst_number))}</span></div>
       <div class="line">Phone No : ${esc(bill.customer_mobile || "-")}</div>
       <div class="line">GSTIN : ${esc(bill.customer_gst_number || "-")}</div>
       ${bill.aadhaar_number ? `<div class="line">Aadhaar : ${esc(bill.aadhaar_number)}</div>` : ""}
