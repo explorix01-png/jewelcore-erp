@@ -73,20 +73,20 @@ export function invoiceStyles(paperSize) {
     .rate-line { padding: 3px 8px; text-align: center; font-weight: 700; font-size: ${cellFont}; border-bottom: 1px solid #000; overflow-wrap: anywhere; }
     table.items { width: 100%; border-collapse: collapse; table-layout: fixed; }
     thead { display: table-header-group; }
-    table.items th { padding: 3px 3px; font-size: ${cellFont}; font-weight: 700; text-align: center; vertical-align: middle; border-bottom: 1px solid #000; border-right: 1px solid #000; overflow-wrap: anywhere; line-height: 1.25; }
+    table.items th { padding: 6px 3px; font-size: ${cellFont}; font-weight: 700; text-align: center; vertical-align: middle; border-bottom: 1px solid #000; border-right: 1px solid #000; overflow-wrap: anywhere; line-height: 1.25; }
     table.items th small { display: block; font-weight: 400; font-size: ${tinyFont}; }
-    table.items td { padding: 3px 4px; font-size: ${cellFont}; vertical-align: top; border-right: 1px solid #000; overflow-wrap: anywhere; line-height: 1.3; }
+    table.items td { padding: 4px 4px; font-size: ${cellFont}; vertical-align: top; border-right: 1px solid #000; overflow-wrap: anywhere; line-height: 1.3; }
     table.items th:last-child, table.items td:last-child { border-right: none; }
     table.items td.left, table.items th.left { text-align: left; }
     table.items td.c { text-align: center; }
     table.items td.right { text-align: right; }
     table.items tbody tr { page-break-inside: avoid; }
     table.items tr.filler td { padding: 0; }
-    table.items tr.total-row td { font-weight: 700; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+    table.items tr.total-row td { font-weight: 700; padding: 6px 4px; vertical-align: middle; border-top: 1px solid #000; border-bottom: 1px solid #000; }
 
     .bottom { display: flex; page-break-inside: avoid; }
     .bottom-left { flex: 1.6; border-right: 1px solid #000; display: flex; flex-direction: column; }
-    .bottom-right { flex: 1; font-size: ${cellFont}; }
+    .bottom-right { flex: 1; font-size: ${cellFont}; display: flex; flex-direction: column; }
 
     .words-pay { display: flex; flex: 1; border-bottom: 1px solid #000; }
     .words { flex: 1.2; padding: 5px 8px; border-right: 1px solid #000; font-size: ${cellFont}; overflow-wrap: anywhere; }
@@ -106,8 +106,10 @@ export function invoiceStyles(paperSize) {
     .sign-row .cust-sign { width: ${isA5 ? "62px" : "92px"}; text-align: center; }
     .sign-row .for-shop { flex: 1; text-align: left; overflow-wrap: anywhere; }
 
-    .t-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 8px; }
-    .t-row.strong { font-weight: 700; border-top: 1px solid #000; border-bottom: 1px solid #000; padding-top: 3px; padding-bottom: 3px; margin: 2px 0; }
+    /* Rows share the column height equally and centre their text, so no row's text touches a line. */
+    .t-row { flex: 1 1 auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 8px; line-height: 1.3; }
+    .t-row.strong { font-weight: 700; border-top: 1px solid #000; padding: 5px 8px; }
+    .t-row.strong + .t-row:not(.strong) { border-top: 1px solid #000; }
 
     .footer-band { padding: 6px 12px; text-align: center; background: linear-gradient(#f3e5ae, #fdf7df); border: 1px solid #c9b46a; border-top: 0; font-size: ${tinyFont}; color: #3b2a0a; overflow-wrap: anywhere; }
     .terms { margin-top: 6px; font-size: ${tinyFont}; color: #333; page-break-inside: avoid; }
@@ -172,7 +174,7 @@ function lineFigures(it) {
 //  - Gold:   Sr.No | Product description (purity, HUID, SC) | Purity / HSN | Net Qty | Gross wt |
 //            Less wt | Net metal wt | Gross product price | Hallmarking | Making charges /
 //            Wastage % (amount over %) | Amount
-//  - Silver: Sr.No | Particulars | SC | HSN | CT | Rate/10gm | GW | NW | Making charges % | Amount
+//  - Silver: Sr.No | Particulars | SC | HSN | CT | Rate/10gm | GW | NW | Value addition (Rs.) | Amount
 const GOLD_COLUMN_WIDTHS = [4, 18, 8, 5, 9, 8, 9, 10, 9, 10, 10];
 const SILVER_COLUMN_WIDTHS = [4, 30, 9, 8, 6, 10, 8, 8, 8, 9];
 
@@ -264,7 +266,7 @@ function silverRow({ it, fig }, index) {
       <td class="right">${money(fig.rate10)}</td>
       <td class="right">${weight(fig.gross)}</td>
       <td class="right">${weight(fig.net)}</td>
-      <td class="right">${percent(fig.makingPct)}</td>
+      <td class="right">${money(fig.addition)}</td>
       <td class="right">${money(fig.amount)}</td>
     </tr>`;
 }
@@ -280,13 +282,13 @@ function silverTable(entries, firstIndex, fillerMm) {
       <th>Rate<small>/ 10 gm</small></th>
       <th>GW</th>
       <th>NW</th>
-      <th>Making Charges</th>
+      <th>Value<br>Addition</th>
       <th>Amount</th>`;
   const totalRow = `
         <td></td><td class="left">Total</td><td></td><td></td><td></td><td></td>
         <td class="right">${weight(sum("gross"))}</td>
         <td class="right">${weight(sum("net"))}</td>
-        <td></td>
+        <td class="right">${money(sum("addition"))}</td>
         <td class="right">${money(sum("amount"))}</td>`;
   return ruledTable(SILVER_COLUMN_WIDTHS, head, entries.map((e, i) => silverRow(e, firstIndex + i)).join(""), totalRow, fillerMm);
 }
